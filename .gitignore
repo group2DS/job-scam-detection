@@ -1,0 +1,61 @@
+# ---- Data ----
+# Data is shared through the group drive, not through git.
+data/**
+!data/**/
+!data/**/.gitkeep
+!data/external/*.csv
+
+*.csv
+*.xls
+*.xlsx
+*.parquet
+*.db
+*.sqlite3
+!data/external/*.csv
+
+# ---- Models and artefacts ----
+*.pkl
+*.joblib
+*.h5
+*.pt
+*.onnx
+models/
+mlruns/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- Environments ----
+.venv/
+venv/
+env/
+.env
+.env.*
+*.envrc
+
+# ---- Notebooks ----
+.ipynb_checkpoints/
+
+# ---- Editors and OS ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# ---- Streamlit ----
+.streamlit/secrets.toml
+
+# ---- Logs ----
+*.log
+logs/

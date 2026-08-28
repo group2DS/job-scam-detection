@@ -43,6 +43,20 @@ The public facing tool. No account required, and submitted data is not stored.
 
 The user submits a listing either as a URL or as pasted job description text. Pasted text is the primary path because it always works, including for listings shared on social media or WhatsApp where there is no clean URL to extract from. If URL extraction fails, the interface falls back to asking for pasted text. Extraction failure is never treated as evidence of fraud.
 
+### Suspicios result
+
+![Job seeker suspicious result](05_jobseeker_suspicious.png)
+
+The most important case in the system, and the reason risk and verification are reported separately.
+
+The listing does not read as an obvious scam. The language is unremarkable and the salary is plausible for the role. What fails is the entity check: the named recruitment agency cannot be found in the licensed agency registry.
+
+A system reporting a single verdict would have to choose between calling this a scam, which it cannot justify, or clearing it, which would leave the user unwarned. Reporting the two statuses separately allows an honest answer: the content looks unremarkable, the agency could not be verified, and the user should confirm the agency independently before sending money or documents.
+
+The recommendation is framed as caution rather than accusation. An unverified entity is not an accused entity. Many legitimate small employers and newer agencies will be absent from an incomplete registry, and the wording must not imply wrongdoing that the system has not established.
+
+The case is still referred for review. Unverified entities appearing repeatedly across listings are exactly the pattern a reviewer needs to see early, before complaints accumulate.
+
 ### High risk result
 
 ![Job seeker high risk result](02_jobseeker_high_risk.png)
@@ -62,6 +76,12 @@ The recommendation states plainly what not to do, and confirms the listing has b
 An employer found in the company registry with no fee requests detected. The recommendation still advises independent verification before signing a contract or sharing personal documents, because a clean automated result is not a guarantee.
 
 Note the registry cited here is the **company registry**, not the agency registry. A direct employer advertising its own vacancy is not operating as a recruitment agency and must not be penalised for being absent from an agency register. The system decides which registry applies based on whether the posting comes from a direct employer or an intermediary.
+
+### Mobile layout
+
+![Mobile layout](10_jobseeker_mobile.png)
+
+Scam listings circulate largely through social media and WhatsApp groups, so most users will reach this tool on a phone. The risk badge and verification status stack vertically as full width blocks, and the reasons list stays readable without horizontal scrolling. The desktop layout is the secondary case, not the primary one.
 
 ---
 
@@ -130,12 +150,6 @@ Job seeker    Government
                    v
         Audit trail + retraining pool
 ```
-
----
-
-## Missing from this set
-
-The **Suspicious / Unverified** job seeker state is not yet captured. It is the most important case for the project's argument: a listing whose content reads plausibly, but whose named agency cannot be found. The user still receives a warning and the case is still referred for review, demonstrating that an unverified entity is handled as caution rather than as an accusation.
 
 ---
 

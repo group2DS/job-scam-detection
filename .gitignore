@@ -1,19 +1,34 @@
-# ---- Data ----
-# Data is shared through the group drive, not through git.
-data/**
-!data/**/
-!data/**/.gitkeep
-!data/external/*.csv
+# ==========================================
+# Data files
+# ==========================================
 
+# Ignore dataset files by default
 *.csv
 *.xls
 *.xlsx
 *.parquet
-*.db
-*.sqlite3
+
+# Keep data folder structure via placeholders
+!data/**/.gitkeep
+
+# Track demonstration registry CSVs
+!data/external/
 !data/external/*.csv
 
-# ---- Models and artefacts ----
+
+# ==========================================
+# Local databases
+# ==========================================
+
+*.db
+*.sqlite
+*.sqlite3
+
+
+# ==========================================
+# Models and generated artifacts
+# ==========================================
+
 *.pkl
 *.joblib
 *.h5
@@ -22,7 +37,11 @@ data/**
 models/
 mlruns/
 
-# ---- Python ----
+
+# ==========================================
+# Python
+# ==========================================
+
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -35,7 +54,11 @@ dist/
 .coverage
 htmlcov/
 
-# ---- Environments ----
+
+# ==========================================
+# Environments and secrets
+# ==========================================
+
 .venv/
 venv/
 env/
@@ -43,19 +66,35 @@ env/
 .env.*
 *.envrc
 
-# ---- Notebooks ----
+
+# ==========================================
+# Notebooks
+# ==========================================
+
 .ipynb_checkpoints/
 
-# ---- Editors and OS ----
+
+# ==========================================
+# Editors and operating systems
+# ==========================================
+
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
 *.swp
 
-# ---- Streamlit ----
+
+# ==========================================
+# Streamlit
+# ==========================================
+
 .streamlit/secrets.toml
 
-# ---- Logs ----
+
+# ==========================================
+# Logs
+# ==========================================
+
 *.log
 logs/

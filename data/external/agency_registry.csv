@@ -1,0 +1,11 @@
+agency_id,agency_name,licence_number,licence_status,status,authorised_destinations,record_is_mock
+A-001,Bright Future Recruitment Agency,NEA/001/2024,active,active,Qatar;UAE;Saudi Arabia,true
+A-002,Skyline Manpower Services,NEA/014/2024,active,active,Qatar;Kuwait,true
+A-003,Nairobi Placement Bureau,NEA/027/2023,active,active,Local,true
+A-004,Gulf Link Employment Agency,NEA/033/2024,active,active,UAE;Oman;Bahrain,true
+A-005,Premier Staffing Solutions Kenya,NEA/041/2025,active,active,Local,true
+A-006,Horizon Labour Export Agency,NEA/052/2022,expired,dormant,Saudi Arabia,true
+A-007,Unity Recruitment Consultants,NEA/060/2024,active,active,Local;Poland,true
+A-008,Eastwind Manpower Agency,NEA/071/2023,revoked,revoked,Qatar,true
+A-009,Coast Employment Services,NEA/080/2025,active,active,Local,true
+A-010,Global Talent Kenya Limited,NEA/091/2024,active,active,UAE;Qatar,true

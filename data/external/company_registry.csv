@@ -1,0 +1,16 @@
+company_id,company_name,registration_number,status,county,record_is_mock
+C-001,Safaricom PLC,C.12345,active,Nairobi,true
+C-002,Kenya Commercial Bank,C.10021,active,Nairobi,true
+C-003,Mediamax Network Limited,C.44120,active,Nairobi,true
+C-004,Bidco Africa Limited,C.20114,active,Kiambu,true
+C-005,Twiga Foods Limited,C.51002,active,Nairobi,true
+C-006,TakaTaka Solutions Limited,C.60881,active,Kiambu,true
+C-007,Jubilee Insurance Company,C.11876,active,Nairobi,true
+C-008,Sanlam Kenya PLC,C.13990,active,Nairobi,true
+C-009,Naivas Limited,C.30775,active,Nairobi,true
+C-010,Kenya Airways PLC,C.10344,active,Nairobi,true
+C-011,Brookside Dairy Limited,C.22019,active,Kiambu,true
+C-012,Equity Group Holdings,C.10998,active,Nairobi,true
+C-013,Highland Springs Hotel Limited,C.71234,dormant,Nakuru,true
+C-014,Coastline Logistics Kenya,C.66120,active,Mombasa,true
+C-015,Rift Valley Agro Limited,C.48221,active,Nakuru,true

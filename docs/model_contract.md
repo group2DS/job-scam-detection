@@ -52,9 +52,9 @@ The API concatenates title and description with a single space:
 text = f"{title} {description}".strip()
 ```
 
-If you train on something different, say title + description + requirements,
+<mark>If you trainining is on something different, say title + description + requirements,
 tell me and I will change `Posting.model_text()` to match. A mismatch here is
-silent and will quietly degrade every prediction.
+silent and will quietly degrade every prediction. </mark>
 
 **Probabilities must be calibrated**, because the decision thresholds are
 absolute values (0.35 and 0.70), not percentiles. Check with a reliability

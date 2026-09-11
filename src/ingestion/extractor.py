@@ -68,9 +68,9 @@ _WALL_MARKERS = re.compile(
 
 # Vocabulary a genuine listing almost always contains somewhere.
 _JOB_MARKERS = re.compile(
-    r"\b(responsibilit(y|ies)|duties|qualification|requirement|experience|"
-    r"salary|remuneration|applicant|candidate|vacanc(y|ies)|"
-    r"job\s+(description|title|type)|apply|application|"
+    r"\b(responsibilit(y|ies)|duties|qualification|requirements?|experience|"
+    r"salary|remuneration|applicants?|candidates?|vacanc(y|ies)|"
+    r"job\s+(description|title|type)|apply|applications?|"
     r"employment|position|recruit)\b",
     re.IGNORECASE,
 )

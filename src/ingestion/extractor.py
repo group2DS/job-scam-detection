@@ -5,8 +5,9 @@ Pasted text is the primary path because it always works, including for
 listings circulated on social media and messaging apps where there is no
 clean URL to fetch. URL extraction is best effort.
 
-Extraction failure is never treated as evidence of fraud. If a URL cannot be
-parsed the caller is asked to paste the text instead.
+Extraction failure is never treated as evidence of fraud. If a page cannot be
+read, or does not look like a job listing, the caller is asked to paste the
+text instead.
 """
 
 from __future__ import annotations
@@ -45,6 +46,56 @@ _LABELLED_FIELD = re.compile(
     r"contact|email|phone)\s*[:\-]\s*(.+)$",
     re.IGNORECASE | re.MULTILINE,
 )
+
+# ---------------------------------------------------------------------------
+# Sanity checking fetched pages
+#
+# A page that loads successfully is not necessarily a job listing. Sites that
+# require a session commonly return a login wall or a consent page, and those
+# contain more than enough text to pass a naive length check. Assessing one
+# produces a confident looking verdict about a page the person never saw,
+# which is worse than admitting the fetch did not work.
+# ---------------------------------------------------------------------------
+
+_WALL_MARKERS = re.compile(
+    r"\b(sign in to continue|log in to continue|please (sign|log) in|"
+    r"create an account to|join now to|enable javascript|"
+    r"verify you are (a )?human|access denied|"
+    r"unusual traffic|are you a robot|checking your browser|"
+    r"accept (all )?cookies to continue|subscribe to (read|continue))\b",
+    re.IGNORECASE,
+)
+
+# Vocabulary a genuine listing almost always contains somewhere.
+_JOB_MARKERS = re.compile(
+    r"\b(responsibilit(y|ies)|duties|qualification|requirement|experience|"
+    r"salary|remuneration|applicant|candidate|vacanc(y|ies)|"
+    r"job\s+(description|title|type)|apply|application|"
+    r"employment|position|recruit)\b",
+    re.IGNORECASE,
+)
+
+
+def looks_like_listing(text: str) -> tuple[bool, str]:
+    """Decide whether fetched text plausibly is a job listing.
+
+    Returns (ok, reason). The reason is shown to the person who submitted the
+    link, so it is written for them rather than for a developer.
+    """
+    stripped = (text or "").strip()
+
+    if len(stripped) < 200:
+        return False, "too little text could be read from that page"
+
+    if _WALL_MARKERS.search(stripped[:2000]):
+        return False, "that page requires a login or blocks automated access"
+
+    # Needs at least two distinct pieces of job vocabulary. One is too easy to
+    # hit by accident on a navigation menu.
+    if len({m.group(0).lower() for m in _JOB_MARKERS.finditer(stripped)}) < 2:
+        return False, "that page does not appear to contain a job listing"
+
+    return True, ""
 
 
 def from_text(text: str, source_url: str | None = None) -> Posting:
@@ -105,39 +156,63 @@ def from_text(text: str, source_url: str | None = None) -> Posting:
     )
 
 
-def from_url(url: str) -> Posting | None:
+class FetchFailed(Exception):
+    """Raised when a URL cannot be turned into a usable listing.
+
+    Carries a message written for the person who submitted the link. This is a
+    usability problem, never a fraud signal, and the wording must not imply
+    otherwise.
+    """
+
+
+def from_url(url: str) -> Posting:
     """Fetch and parse a listing page.
 
-    Returns None when the page cannot be retrieved or yields too little text,
-    so the caller can ask the user to paste instead. Deliberately tolerant:
-    a failed fetch is a usability problem, not a fraud signal.
+    Raises FetchFailed when the page cannot be retrieved or does not look like
+    a job listing, so the caller can ask for a paste instead.
     """
     try:
         import httpx
         from bs4 import BeautifulSoup
-    except ImportError:
-        log.warning("httpx or beautifulsoup4 not installed; URL path disabled.")
-        return None
+    except ImportError as exc:
+        raise FetchFailed(
+            "Reading links is unavailable. Please paste the job description."
+        ) from exc
 
     try:
         response = httpx.get(
             url,
             timeout=10.0,
             follow_redirects=True,
-            headers={"User-Agent": "JobScamDetection/0.1 (capstone project)"},
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (compatible; JobScamCheck/0.1; "
+                    "capstone project)"
+                ),
+                "Accept-Language": "en-GB,en;q=0.9",
+            },
         )
         response.raise_for_status()
     except Exception as exc:
         log.info("Could not fetch %s: %s", url, exc)
-        return None
+        raise FetchFailed(
+            "That page could not be opened. It may require a login, or block "
+            "automated access. Please paste the job description instead."
+        ) from exc
 
     soup = BeautifulSoup(response.text, "html.parser")
-    for tag in soup(["script", "style", "nav", "footer", "header"]):
+    for tag in soup(["script", "style", "nav", "footer", "header", "form"]):
         tag.decompose()
 
     text = re.sub(r"\n{3,}", "\n\n", soup.get_text("\n")).strip()
-    if len(text) < 100:
-        return None
+
+    ok, reason = looks_like_listing(text)
+    if not ok:
+        log.info("Rejected %s: %s", url, reason)
+        raise FetchFailed(
+            f"We could not read a job listing from that link, because "
+            f"{reason}. Please paste the job description instead."
+        )
 
     posting = from_text(text, source_url=url)
     if soup.title and soup.title.string:

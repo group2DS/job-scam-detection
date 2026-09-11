@@ -141,7 +141,6 @@ def analyse(
 
     return _assess(posting, session)
 
-
 @router.post("/analyse/file", response_model=AnalyseResponse)
 async def analyse_file(
     file: UploadFile = File(...),
@@ -159,6 +158,26 @@ async def analyse_file(
     except files.ExtractionError as exc:
         # These messages are written for the person who uploaded the file.
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # An uploaded file is usually something the person was sent, so the wrong
+    # document lands here more often than in the paste box: a CV, a contract,
+    # a bank statement. Returning a fraud verdict on one of those is worse
+    # than declining to assess it.
+    #
+    # Pasted text is deliberately not held to this check. Someone who typed
+    # or pasted has stated their intent, and a genuine listing forwarded on
+    # WhatsApp can be short and sparsely worded.
+
+    ok, reason = extractor.looks_like_listing(text, min_length=MIN_CHARS)
+    if not ok:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"That document does not appear to contain a job listing, "
+                f"because {reason}. If it is a job advert, try pasting the "
+                f"text instead."
+            ),
+        )
 
     posting = extractor.from_text(text)
     return _assess(posting, session)

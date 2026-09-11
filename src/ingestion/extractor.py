@@ -75,25 +75,26 @@ _JOB_MARKERS = re.compile(
     re.IGNORECASE,
 )
 
-
-def looks_like_listing(text: str) -> tuple[bool, str]:
-    """Decide whether fetched text plausibly is a job listing.
+def looks_like_listing(text: str, min_length: int = 200) -> tuple[bool, str]:
+    """Decide whether text plausibly is a job listing.
 
     Returns (ok, reason). The reason is shown to the person who submitted the
-    link, so it is written for them rather than for a developer.
+    content, so it is written for them rather than for a developer.
+
+    The default floor suits fetched web pages, where anything shorter is
+    almost always an error page. Uploads pass a lower value, since a genuine
+    advert sent as a document can be brief.
     """
     stripped = (text or "").strip()
 
-    if len(stripped) < 200:
-        return False, "too little text could be read from that page"
+    if len(stripped) < min_length:
+        return False, "too little text could be read from it"
 
     if _WALL_MARKERS.search(stripped[:2000]):
-        return False, "that page requires a login or blocks automated access"
+        return False, "it requires a login or blocks automated access"
 
-    # Needs at least two distinct pieces of job vocabulary. One is too easy to
-    # hit by accident on a navigation menu.
     if len({m.group(0).lower() for m in _JOB_MARKERS.finditer(stripped)}) < 2:
-        return False, "that page does not appear to contain a job listing"
+        return False, "it does not contain the wording a job advert usually has"
 
     return True, ""
 

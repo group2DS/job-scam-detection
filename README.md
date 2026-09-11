@@ -14,7 +14,7 @@ The verification information that does exist is disconnected from the channels w
 
 ## 2. What this system does
 
-The system accepts a job posting and returns:
+The system accepts a job posting as a link, pasted text, or an uploaded document, and returns:
 
 - a risk level,
 - a verification status for the employer or recruitment agency,
@@ -24,14 +24,45 @@ The system accepts a job posting and returns:
 
 It is a decision support tool. It does not make legal determinations and it does not replace any regulator's authority.
 
-## 3. Objectives
+## 3. Running it locally
 
-- Build an explainable classifier that estimates the probability that a job posting is fraudulent.
-- Extract scam signals from posting text, for example upfront fee requests, urgency language, vague duties, and unrealistic pay.
-- Verify the named employer or agency against registry reference data, including fuzzy matching to catch near miss impersonation.
-- Separate content risk from entity verification so that neither one silently overrides the other.
-- Provide a government review interface with an auditable record of review decisions.
-- Feed reviewed outcomes back into a versioned dataset for future retraining.
+Two services. The API must be started first.
+
+### API
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+python -m uvicorn src.api.main:app --reload
+```
+
+Runs on `http://127.0.0.1:8000`, with interactive documentation at `/docs`.
+
+The service starts whether or not a trained model is present. When `artifacts/model.pkl` is absent it falls back to a clearly identified keyword stub, so interface work is never blocked on modelling. Check which is active:
+
+```bash
+curl http://127.0.0.1:8000/api/health
+```
+
+### Job seeker interface
+
+```bash
+cd app/jobseeker
+npm install
+npm run dev
+```
+
+Runs on `http://localhost:5173`. The API's CORS settings already allow that origin.
+
+### Tests
+
+```bash
+python -m pytest tests/ -q
+```
+
+23 tests, no services required.
 
 ## 4. Users
 
@@ -43,7 +74,7 @@ It is a decision support tool. It does not make legal determinations and it does
 
 ```
                  Job seeker submits
-             URL / pasted text / upload
+             URL / pasted text / document
                           |
                           v
                  Content extraction
@@ -75,15 +106,17 @@ It is a decision support tool. It does not make legal determinations and it does
                             Audit trail + retraining pool
 ```
 
+The classifier receives text and returns a probability. It never sees registry data and never assigns a tier. Verification is computed independently, and the decision layer combines the two. That boundary is why a registered employer can still be flagged high risk, and why modelling can iterate without touching the API.
+
 Two statuses are returned, never collapsed into one:
 
-| Risk assessment | Verification status |
+| Risk level | Verification status |
 | --- | --- |
-| `LOW_RISK` | `VERIFIED` |
-| `SUSPICIOUS` | `UNVERIFIED` |
-| `HIGH_RISK` | `BLACKLISTED` |
-| | `POSSIBLE_IMPERSONATION` |
-| | `NOT_APPLICABLE` |
+| `lower_risk` | `verified` |
+| `suspicious` | `unverified` |
+| `high_risk` | `blacklisted` |
+| | `possible_impersonation` |
+| | `not_applicable` |
 
 Guiding rules:
 
@@ -92,29 +125,63 @@ Guiding rules:
 - Blacklisted is strong high risk evidence.
 - A near miss on a registered name is a possible impersonation, not a match.
 
-## 6. Data
+The word "safe" is never used in the interface. The lowest tier reads "Lower risk", because the system cannot guarantee safety.
+
+## 6. API
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/api/analyse` | Assess a listing from a URL or pasted text |
+| POST | `/api/analyse/file` | Assess a listing from a PDF, DOCX or TXT upload |
+| GET | `/api/analyse/formats` | Supported upload formats and limits |
+| GET | `/api/cases` | Review queue, filterable by risk, status, market |
+| GET | `/api/cases/stats` | Dashboard summary counts |
+| GET | `/api/cases/{id}` | Case detail including reasons and audit trail |
+| POST | `/api/cases/{id}/decision` | Record a reviewer decision |
+| GET | `/api/health` | Service status, including stub or trained model |
+
+Referral is a database write. The government dashboard reads the same table the analysis endpoint writes to, so there is no queue or integration layer between them.
+
+Full details in [docs/api.md](docs/api.md). The modelling interface contract is in [docs/model_contract.md](docs/model_contract.md).
+
+## 7. Data
 
 Preference order: real world data first, programmatic generation only where real examples are unavailable.
 
+The merged corpus is 68,138 rows after deduplication, partitioned by provenance rather than pooled. The three splits have different epistemic status and different roles:
+
+| Split | Rows | Role |
+| --- | --- | --- |
+| `01_trainable_real.csv` | 15,555 | Trains the classifier. Real labelled rows, 4.3% fraud |
+| `02_synthetic_scenarios.csv` | 39,527 | System test fixtures. Never training or validation data |
+| `03_kenyan_unlabelled.csv` | 13,056 | Local distributions and the manual annotation pool |
+
+Sources:
+
 | Layer | Source | Role |
 | --- | --- | --- |
-| Labelled fraud data | DIFrauD job scams (relabelled EMSCAD) | Trains the core text classifier |
-| Real Kenyan postings | BrighterMonday, Fuzu | Local language, formats, salary norms |
-| Verification reference | Mock company registry, mock agency registry | Entity lookup and blacklist checks |
-| Scenario testing | Mock job postings | Pipeline, dashboard, and Kenya specific scenario tests |
+| Labelled fraud data | EMSCAD job postings | Trains the core text classifier |
+| Real Kenyan postings | BrighterMonday, Fuzu, JobWeb Kenya, Corporate Staffing, PigiaMe | Local language, formats, salary norms |
+| Verification reference | Mock company registry, mock agency registry, blacklist | Entity lookup at request time |
+| Scenario testing | Generated Kenyan scam scenarios | Pipeline and interface behaviour tests |
+
+The splits exist because of a measured failure. Training on the pooled dataset produced 0.99 accuracy and 0.9987 ROC-AUC. Trained on the generated rows alone the model scored a perfect 1.000 on held out synthetic data, but caught only 33% of real fraud at 9% precision. Generated and real rows were separable at 100% accuracy, and every generated row fell inside a 286 to 635 character band while real postings ran past 14,000. The honest baseline on real data is approximately 0.65 F1 on the fraud class.
 
 Every record carries provenance so an assumed label is never mistaken for a verified one:
 
 ```
-source_dataset    DIFrauD | BrighterMonday | Fuzu | MockKenyanScam | HumanReviewed
+source_dataset    EMSCAD | BrighterMonday | Fuzu | JobWebKenya |
+                  CorporateStaffing | PigiaMe | MockKenyanScam | HumanReviewed
 label_source      original_dataset | platform_assumed_legitimate |
                   synthetic_generation | government_review | manual_annotation
 label_confidence  high | medium | low
 is_synthetic      true | false
-parent_record_id  set for augmented variants
+fingerprint       normalised text hash, split on this rather than row index
 ```
 
-Registry data is mock. It is clearly labelled as simulated in the interface and is not an official government source.
+Postings collected from job boards are real postings, not verified legitimate postings. They carry medium confidence, not ground truth.
+
+Registry data is simulated, flagged `record_is_mock`, read from `data/external/` at startup, and labelled as a demonstration source in both interfaces.
 
 ### Canonical posting schema
 
@@ -126,91 +193,114 @@ email, phone, application_url, source, fraud_label
 
 `fraud_label` is a column in the postings table, `0` legitimate and `1` fraudulent. Registries stay as separate lookup tables and are joined at verification time, never appended as posting rows.
 
-## 7. Repository structure
+The classifier is trained as a binary model. The three risk tiers are produced by the decision layer from thresholds in `src/core/config.py`, so they can be retuned from validation data without retraining anything.
+
+## 8. Repository structure
 
 ```
 job-scam-detection/
-  data/
-    raw/         source data, unmodified
-    processed/   cleaned, schema aligned
-    external/    registries and reference lookups
-    synthetic/   generated records
-  docs/
-    architecture/    system design
-    diagrams/        exported wireframes and flows
-    meeting_notes/   decisions and supervisor feedback
-  notebooks/     exploration and EDA
+  app/
+    jobseeker/       React interface, Vite
+    government/      review dashboard
   src/
+    api/             FastAPI routes and application entry point
+    core/            shared schemas and configuration
+    ingestion/       URL, text and document extraction
+    models/          classifier wrapper with development stub
+    rules/           deterministic scam signal detection
+    verification/    registry lookup, fuzzy matching, blacklist
+    decision/        combines evidence into tiers and routing
+    db/              review cases and audit entries
     data/            loading and cleaning
     features/        feature engineering
-    models/          training and evaluation
-    verification/    registry lookup and fuzzy matching
     explainability/  reason generation
-  app/
-    jobseeker/   job seeker interface
-    government/  review dashboard
+  data/
+    raw/             source data, unmodified
+    processed/       cleaned, schema aligned, split by provenance
+    external/        registries and reference lookups, versioned
+    synthetic/       generated records
+  docs/
+    api.md           API service documentation
+    model_contract.md   modelling export interface
+    architecture/    system design
+    diagrams/        interface designs and design notes
+    meeting_notes/   decisions and supervisor feedback
+  notebooks/         exploration and EDA
+  artifacts/         trained model artefacts, gitignored
   tests/
 ```
 
-Large data files are not committed. See `.gitignore`.
+Large data files are not committed. The three demonstration registry CSVs in `data/external/` are the deliberate exception. See `.gitignore`.
 
-## 8. Working on this repo
+## 9. Working on this repo
 
 Branch from `main`, never commit to `main` directly, open a pull request, get one review.
 
 ```
-feature/readme
-feature/ui
-feature/data-audit
-feature/data-cleaning
-feature/eda
+feature/api-skeleton
+feature/jobseeker-ui
+feature/ui-polish
 feature/modelling
+feature/dashboard
+docs/<topic>
 ```
 
 Commit prefixes: `feat:` `fix:` `docs:` `data:` `refactor:` `test:` `chore:`
 
 Full contribution rules are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## 9. Team and ownership
+## 10. Team and ownership
 
-| Area | Owner |
-| --- | --- |
-| Dataset search | Whole team |
-| Data loading and cleaning | Assigned |
-| README and repository administration | Alex Kinyua |
-| Data audit | Assigned |
-| EDA | Assigned |
-| Modelling | Assigned |
-| UI | Alex Kinyua |
-| Dashboard | Unassigned |
-| Deployment | Unassigned |
+| Area | Owner | Status |
+| --- | --- | --- |
+| Dataset search | Whole team | Done |
+| Data loading and cleaning | Melisa Achieng | Done |
+| Data audit | Briannah Chelangat | Done |
+| EDA | Cleopas Karanja | Done |
+| Modelling | Cleopas Karanja | In progress |
+| API and backend | Alex Kinyua, Brisley Chelangat | Done |
+| URL pipeline and job seeker interface | Alex Kinyua, Brisley Chelangat | Done |
+| Government dashboard | Brisley Chelangat | In progress |
+| README and repository administration | Alex Kinyua | Ongoing |
+| Project documentation | Christopher Kariuki | Ongoing |
+| Deployment | Unassigned | Not started |
 
 Task tracking is in ClickUp. Group lead: Cleopas Karanja.
 
-## 10. Roadmap
+## 11. Roadmap
 
-**Phase 1. Data.** Source real data, agree the canonical schema, audit, clean, EDA.
+**Phase 1. Data.** Source real data, agree the canonical schema, audit, clean, EDA. *Complete.*
 
-**Phase 2. Modelling.** TF-IDF with Logistic Regression baseline, structured feature model, comparison, imbalance handling, explainability.
+**Phase 2. Interfaces and services.** API, decision pipeline, registry verification, job seeker interface, document upload. *Complete.*
 
-**Phase 3. Verification.** Registry lookup, fuzzy matching, blacklist checks, rule based signals, decision layer.
+**Phase 3. Modelling.** TF-IDF with Logistic Regression baseline, structured feature comparison, imbalance handling, calibration, explainability. *In progress.*
 
-**Phase 4. Interfaces.** Job seeker app, government dashboard, review workflow and audit trail.
+**Phase 4. Government dashboard.** Queue, case detail, reviewer decisions, audit trail wired to the API. *In progress.*
 
-**Phase 5. Integration.** End to end testing, evaluation write up, deployment, panel presentation.
+**Phase 5. Integration.** Model swap, deployment, end to end testing, evaluation write up, panel presentation.
 
-## 11. Scope
+## 12. Scope
 
-**In scope.** Data pipeline, baseline and comparison models, imbalance handling, explainability, registry verification against mock data including fuzzy matching, job seeker demo app, mock review dashboard, provenance documentation.
+**In scope.** Data pipeline and provenance partitioning, baseline and comparison models, imbalance handling, explainability, registry verification against simulated data including fuzzy impersonation matching, job seeker interface with link, paste and document upload, government review dashboard, audit trail.
 
-**Stretch.** URL extraction, threshold tuning from precision and recall analysis, transformer embeddings, duplicate campaign clustering.
+**Stretch.** Threshold tuning from precision and recall analysis, transformer embeddings, duplicate campaign clustering, manual annotation of Kenyan postings to build a locally labelled set.
 
-**Out of scope, described as future work.** Live integration with any government system, WhatsApp or USSD interfaces, live scraping of job boards, and actual adoption by government or job board partners.
+**Out of scope, described as future work.** Live integration with any government system, WhatsApp or USSD interfaces, live scraping of job boards, optical character recognition for scanned documents and screenshots, and actual adoption by government or job board partners.
 
-## 12. Evaluation
+## 13. Evaluation
 
-Fraudulent postings are a small minority, so accuracy alone is not a success measure. Reported metrics are recall on the fraudulent class, precision and false positive rate, F1, PR-AUC and ROC-AUC, the confusion matrix, and a qualitative interpretability check. Real and synthetic data are evaluated separately. Test data is never augmented, and augmented variants stay in the same split as their parent record.
+Fraudulent postings are a small minority, so accuracy alone is not a success measure. Always predicting "legitimate" scores roughly 95% accuracy and 0.000 F1 on the class that matters.
 
-## 13. Disclaimer
+Reported metrics are recall on the fraudulent class, precision and false positive rate, F1, PR-AUC and ROC-AUC, the confusion matrix with false negatives called out explicitly, and a qualitative interpretability check. Real and generated data are evaluated separately. Splits are taken on the text fingerprint rather than the row index, so near duplicate postings cannot straddle the train and test boundary.
+
+## 14. Known limitations
+
+- The system assumes the input is a job listing. An unrelated document still returns an assessment. A document type check is future work.
+- Scanned images and screenshots cannot be read, since no optical character recognition is included.
+- Registry data is simulated. Absence from it proves nothing about the real world.
+- The classifier is trained on a foreign corpus. Kenya specific overseas placement patterns are covered by the deterministic rules rather than learned, until locally annotated data is available.
+- No labelled Kenya specific job scam dataset exists publicly, so local fraud examples are limited.
+
+## 15. Disclaimer
 
 This is a student capstone project. Registry data is simulated. Outputs are advisory only and must not be treated as an official verification of any company, agency, or job posting.

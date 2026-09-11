@@ -95,6 +95,7 @@ class Posting(BaseModel):
 
     title: Optional[str] = None
     description: Optional[str] = None
+    requirements: Optional[str] = None
     employer_name: Optional[str] = None
     agency_name: Optional[str] = None
     entity_type: EntityType = EntityType.UNKNOWN
@@ -116,10 +117,14 @@ class Posting(BaseModel):
     def model_text(self) -> str:
         """Concatenated text handed to the classifier.
 
-        Must mirror how the training corpus was assembled, otherwise the
-        vectoriser sees a different distribution at inference time.
+        Mirrors how the training corpus was assembled: title, description and
+        requirements joined with a single space. If this drifts from the
+        training construction the vectoriser sees a different distribution at
+        inference time, and nothing will raise an error.
         """
-        return " ".join(p for p in [self.title, self.description] if p).strip()
+        return " ".join(
+            p for p in [self.title, self.description, self.requirements] if p
+        ).strip()
 
 
 # --------------------------------------------------------------------------

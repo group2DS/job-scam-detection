@@ -26,7 +26,7 @@ services:
           property: connectionString
       # Set this in the dashboard once the frontend URL is known.
       - key: CORS_ORIGINS
-        sync: false
+        value: "https://job-scam-detection-five.vercel.app,http://localhost:5173"
 
 databases:
   - name: job-scam-db

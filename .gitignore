@@ -1,19 +1,20 @@
 # ==========================================
-# Data files
+# Data files & Exceptions
 # ==========================================
 
-# Ignore dataset files by default
+# Ignore dataset files
 *.csv
 *.xls
 *.xlsx
 *.parquet
 
-# Keep data folder structure via placeholders
-!data/**/.gitkeep
-
-# Track demonstration registry CSVs
-!data/external/
+# Explicitly permit tracking in specific folders
+!data/
+!data/**/
 !data/external/*.csv
+
+# Keep folder structure placeholders
+!data/**/.gitkeep
 
 
 # ==========================================
@@ -36,6 +37,11 @@
 *.onnx
 models/
 mlruns/
+
+# Explicit model exceptions (placed AFTER *.pkl rule)
+!artifacts/
+!artifacts/model.pkl
+!artifacts/vectorizer.pkl
 
 
 # ==========================================
@@ -86,7 +92,7 @@ Thumbs.db
 
 
 # ==========================================
-# Streamlit
+# Streamlit & Secrets
 # ==========================================
 
 .streamlit/secrets.toml

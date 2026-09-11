@@ -5,12 +5,15 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic_settings import BaseSettings
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
     app_name: str = "Job Scam Detection API"
     version: str = "0.1.0"
 
@@ -38,10 +41,37 @@ class Settings(BaseSettings):
     fuzzy_match_threshold: float = 0.90
     impersonation_threshold: float = 0.75
 
-    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+    # Browser origins allowed to call the API, comma separated. In deployment
+    # set CORS_ORIGINS to the deployed frontend URLs. Held as a string rather
+    # than a list because deployment dashboards make plain text easy to paste
+    # and JSON quoting easy to get wrong.
+    cors_origins: str = "http://localhost:3000,http://localhost:5173"
 
-    class Config:
-        env_file = ".env"
+    @field_validator("database_url")
+    @classmethod
+    def _normalise_database_url(cls, value: str) -> str:
+        """Accept the postgres:// scheme some hosts hand out.
+
+        Render and Heroku expose connection strings beginning postgres://,
+        which SQLAlchemy 2.0 no longer recognises. Rewriting it here means the
+        value copied from the dashboard works unedited.
+        """
+        if value.startswith("postgres://"):
+            return value.replace("postgres://", "postgresql://", 1)
+        return value
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        """Allowed origins, parsed from the comma separated setting."""
+        return [
+            origin.strip()
+            for origin in self.cors_origins.split(",")
+            if origin.strip()
+        ]
+
+    @property
+    def is_postgres(self) -> bool:
+        return self.database_url.startswith("postgresql")
 
 
 @lru_cache

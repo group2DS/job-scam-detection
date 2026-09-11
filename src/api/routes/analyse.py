@@ -118,15 +118,15 @@ def analyse(
     # Ingestion. URL is best effort; pasted text is the reliable path.
     posting = None
     if payload.url:
-        posting = extractor.from_url(payload.url)
-        if posting is None and not payload.text:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "That page could not be read automatically. Please paste "
-                    "the job description text instead."
-                ),
-            )
+        try:
+            posting = extractor.from_url(payload.url)
+        except extractor.FetchFailed as exc:
+            # A page we cannot read is a usability problem, not a fraud
+            # signal. Fall back to pasted text if it was supplied, otherwise
+            # tell the person why and ask for a paste.
+            if not payload.text:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            log.info("URL fetch failed, using supplied text: %s", exc)
     if posting is None:
         text = (payload.text or "").strip()
         if len(text) < MIN_CHARS:

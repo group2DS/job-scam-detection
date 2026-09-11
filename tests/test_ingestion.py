@@ -93,3 +93,12 @@ def test_non_listings_are_rejected(text, label):
 def test_genuine_listings_are_accepted(text, label):
     ok, reason = looks_like_listing(text)
     assert ok, f"{label} was rejected: {reason}"
+
+def test_short_genuine_listing_passes_upload_floor():
+    text = (
+        "Title: Hotel Staff\nAgency: Swift Resources Agency\nLocation: Qatar\n"
+        "Pay a registration fee of KES 5000 via Mpesa to secure the position. "
+        "Applicants should have experience in hotel service."
+    )
+    assert looks_like_listing(text, min_length=40)[0]
+    assert not looks_like_listing(text)[0]   # rejected at the web page floor

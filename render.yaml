@@ -1,0 +1,34 @@
+# Render blueprint.
+#
+# Creates the API service and a Postgres instance, and wires the connection
+# string between them automatically.
+#
+# Postgres matters here rather than SQLite: Render's filesystem is ephemeral,
+# so a SQLite file would be wiped on every restart and every deploy, taking
+# the review cases with it. The government dashboard would show an empty
+# queue after any redeploy.
+
+services:
+  - type: web
+    name: job-scam-api
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn src.api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.3"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: job-scam-db
+          property: connectionString
+      # Set this in the dashboard once the frontend URL is known.
+      - key: CORS_ORIGINS
+        sync: false
+
+databases:
+  - name: job-scam-db
+    plan: free
+    region: frankfurt

@@ -6,6 +6,17 @@ Capstone project, Group 2, Data Science.
 
 ---
 
+**Live demonstration**
+
+| | |
+| --- | --- |
+| Job seeker interface | https://job-scam-detection-five.vercel.app |
+| API | https://job-scam-api-vbc3.onrender.com |
+| API documentation | https://job-scam-api-vbc3.onrender.com/docs |
+
+Hosted on free tiers. The API sleeps after 15 minutes of inactivity, so the
+first request after a pause can take up to a minute.
+
 ## 1. Problem statement
 
 Kenyan job seekers have very few reliable, real time ways to check whether a job posting or recruitment agency is legitimate before they apply, pay a fee, hand over personal documents, or travel. Enforcement against fraudulent agencies is largely reactive: agencies are investigated, delisted, or blacklisted only after victims have already come forward. Fake overseas placements are the most severe case, because the harm can extend from financial loss to forced labour and trafficking.
@@ -62,7 +73,17 @@ Runs on `http://localhost:5173`. The API's CORS settings already allow that orig
 python -m pytest tests/ -q
 ```
 
-23 tests, no services required.
+All tests, no services required.
+
+### Deployment
+
+Postgres and the API on Render via `render.yaml`, the interface on Vercel.
+Step by step instructions are in [docs/DEPLOY.md](docs/DEPLOY.md). Environment variables matter:
+| Variable | Where | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | Render | Wired automatically by the blueprint |
+| `CORS_ORIGINS` | Render | Comma separated list of allowed frontend origins |
+| `VITE_API_URL` | Vercel | The API base URL, inlined at build time |
 
 ## 4. Users
 
@@ -263,7 +284,7 @@ Full contribution rules are in [CONTRIBUTING.md](CONTRIBUTING.md).
 | Government dashboard | Brisley Chelangat | In progress |
 | README and repository administration | Alex Kinyua | Ongoing |
 | Project documentation | Christopher Kariuki | Ongoing |
-| Deployment | Unassigned | Not started |
+| Deployment | Alex Kinyua | Done |
 
 Task tracking is in ClickUp. Group lead: Cleopas Karanja.
 

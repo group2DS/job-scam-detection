@@ -94,7 +94,7 @@ def looks_like_listing(text: str, min_length: int = 200) -> tuple[bool, str]:
         return False, "it requires a login or blocks automated access"
 
     if len({m.group(0).lower() for m in _JOB_MARKERS.finditer(stripped)}) < 2:
-        return False, "it does not contain the wording a job advert usually has"
+        return False, "the page did not read as a job advert"
 
     return True, ""
 

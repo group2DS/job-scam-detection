@@ -250,6 +250,127 @@ def apply_styles():
             border-radius: 12px;
             padding: 1rem;
         }
+        
+        /* Main application text */
+section.main,
+section.main p,
+section.main span,
+section.main label,
+section.main h1,
+section.main h2,
+section.main h3,
+section.main h4 {
+    color: #0f172a;
+}
+
+/* Streamlit main content headings */
+div[data-testid="stMainBlockContainer"] h1,
+div[data-testid="stMainBlockContainer"] h2,
+div[data-testid="stMainBlockContainer"] h3,
+div[data-testid="stMainBlockContainer"] h4 {
+    color: #0f172a !important;
+}
+
+/* Normal main-page text */
+div[data-testid="stMainBlockContainer"] p,
+div[data-testid="stMainBlockContainer"] label,
+div[data-testid="stMainBlockContainer"] .stCaption {
+    color: #475569 !important;
+}
+
+/* Form labels */
+div[data-testid="stForm"] label,
+div[data-testid="stTextInput"] label,
+div[data-testid="stTextArea"] label,
+div[data-testid="stSelectbox"] label,
+div[data-testid="stCheckbox"] label {
+    color: #334155 !important;
+    font-weight: 600;
+}
+
+/* Text inputs */
+div[data-testid="stTextInput"] input {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 8px !important;
+}
+
+/* Text areas */
+div[data-testid="stTextArea"] textarea {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 8px !important;
+}
+
+/* Select boxes */
+div[data-baseweb="select"] > div {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    border-color: #cbd5e1 !important;
+}
+
+/* Placeholder text */
+input::placeholder,
+textarea::placeholder {
+    color: #94a3b8 !important;
+    opacity: 1 !important;
+}
+
+/* Disabled description field */
+textarea:disabled {
+    background-color: #f8fafc !important;
+    color: #334155 !important;
+    opacity: 1 !important;
+}
+
+/* Checkbox text */
+div[data-testid="stCheckbox"] p {
+    color: #334155 !important;
+}
+
+/* Keep header text white */
+.dashboard-header h1,
+.dashboard-header p {
+    color: #ffffff !important;
+}
+
+.dashboard-header p {
+    color: #dbeafe !important;
+}
+
+/* Keep sidebar text light */
+section[data-testid="stSidebar"] h1,
+section[data-testid="stSidebar"] h2,
+section[data-testid="stSidebar"] h3,
+section[data-testid="stSidebar"] p,
+section[data-testid="stSidebar"] span,
+section[data-testid="stSidebar"] label {
+    color: #f8fafc;
+}
+
+/* Case card content */
+.case-card h3 {
+    color: #0f172a !important;
+}
+
+.case-card > div {
+    color: #334155 !important;
+}
+
+.case-meta {
+    color: #64748b !important;
+}
+
+/* Statistics values */
+div[data-testid="stMetric"] label {
+    color: #64748b !important;
+}
+
+div[data-testid="stMetricValue"] {
+    color: #0f172a !important;
+}
         </style>
         """,
         unsafe_allow_html=True,
@@ -837,7 +958,30 @@ def render_case_detail(client, case_id):
             else:
                 st.write(display_value(entry))
 
-    
+    if case.get("review_status") == "resolved":
+        st.success(
+            "This case is resolved. The recorded decision "
+            "cannot be edited."
+        )
+
+        show_detail(
+            "Review outcome",
+            case.get("review_outcome"),
+        )
+
+        show_detail(
+            "Review notes",
+            case.get("review_notes"),
+        )
+
+        show_detail(
+            "Reviewed at",
+            format_datetime(
+                case.get("reviewed_at")
+            ),
+        )
+
+
 def main():
     apply_styles()
     initialise_state()

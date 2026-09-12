@@ -1,4 +1,5 @@
 import streamlit as st
+from src.core.schemas import ReviewOutcome
 
 try:
     from app.government.api_client import (
@@ -39,6 +40,12 @@ REVIEW_LABELS = {
     "resolved": "Resolved",
 }
 
+OUTCOME_LABELS = {
+    "confirmed_legitimate": "Confirmed legitimate",
+    "confirmed_scam": "Confirmed scam",
+    "needs_more_evidence": "Needs more evidence",
+    "duplicate": "Duplicate report",
+}
 
 def display_value(value, fallback="Not provided"):
     if value is None:
@@ -72,6 +79,16 @@ def format_review_status(value):
         value,
         display_value(value),
     )
+
+def format_outcome(value):
+    if value is None:
+        return "No decision recorded"
+
+    if value in OUTCOME_LABELS:
+        return OUTCOME_LABELS[value]
+
+    return str(value).replace("_", " ").strip().title()
+    
 
 
 def format_probability(value):
@@ -556,7 +573,106 @@ def show_detail(label, value):
     st.markdown("**{}**".format(label))
     st.write(display_value(value))
 
+def render_decision_form(client, case):
+    st.markdown("### Reviewer decision")
 
+    case_id = case.get("case_id")
+    review_status = case.get("review_status")
+    review_outcome = case.get("review_outcome")
+
+    if review_status == "resolved" or review_outcome:
+        st.success(
+            "This case has already been resolved. "
+            "The recorded decision cannot be edited."
+        )
+
+        show_detail(
+            "Recorded outcome",
+            format_outcome(review_outcome),
+        )
+
+        show_detail(
+            "Reviewer notes",
+            case.get("review_notes"),
+        )
+
+        show_detail(
+            "Reviewed at",
+            format_datetime(case.get("reviewed_at")),
+        )
+
+        return
+
+    outcome_values = [
+        outcome.value
+        for outcome in ReviewOutcome
+    ]
+
+    outcome = st.selectbox(
+        "Outcome",
+        options=outcome_values,
+        format_func=format_outcome,
+        index=None,
+        placeholder="Select a reviewer outcome",
+    )
+
+    reviewer = st.text_input(
+        "Reviewer name",
+        placeholder="Enter the reviewer name",
+        help=(
+            "Temporary demonstration field. "
+            "Reviewer identity will later come from authentication."
+        ),
+    )
+
+    notes = st.text_area(
+        "Decision notes",
+        placeholder=(
+            "Record the evidence considered and explain "
+            "the reason for the decision."
+        ),
+        height=140,
+    )
+
+    st.caption(
+        "Decisions are recorded by the backend and cannot be edited."
+    )
+
+    submit_disabled = (
+        not outcome
+        or not reviewer.strip()
+        or not notes.strip()
+    )
+
+    if st.button(
+        "Submit decision",
+        type="primary",
+        disabled=submit_disabled,
+        use_container_width=True,
+    ):
+        try:
+            with st.spinner("Recording reviewer decision..."):
+                client.submit_decision(
+                    case_id=case_id,
+                    outcome=outcome,
+                    notes=notes,
+                    reviewer=reviewer,
+                )
+
+            st.success("The reviewer decision was recorded.")
+
+            st.session_state[
+                "decision_success_message"
+            ] = "The reviewer decision was recorded."
+
+            st.rerun()
+
+        except SafeHireAPIError as error:
+            st.error(error.message)
+
+        except ValueError as error:
+            st.error(str(error))
+            
 def render_case_detail(client, case_id):
     if st.button("Back to queue"):
         st.session_state.selected_case_id = None
@@ -704,6 +820,9 @@ def render_case_detail(client, case_id):
                     )
             else:
                 st.write(display_value(reason))
+        st.divider()
+    render_decision_form(client, case)
+    st.divider()            
 
     st.markdown("### Audit trail")
 
@@ -718,30 +837,7 @@ def render_case_detail(client, case_id):
             else:
                 st.write(display_value(entry))
 
-    if case.get("review_status") == "resolved":
-        st.success(
-            "This case is resolved. The recorded decision "
-            "cannot be edited."
-        )
-
-        show_detail(
-            "Review outcome",
-            case.get("review_outcome"),
-        )
-
-        show_detail(
-            "Review notes",
-            case.get("review_notes"),
-        )
-
-        show_detail(
-            "Reviewed at",
-            format_datetime(
-                case.get("reviewed_at")
-            ),
-        )
-
-
+    
 def main():
     apply_styles()
     initialise_state()

@@ -14,10 +14,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from src.api.dependencies.auth import get_current_user
 from src.core.schemas import CaseDetail, CaseSummary, Reason, ReviewDecision
 from src.db.models import AuditEntry, ReviewCase, get_session
 
-router = APIRouter(tags=["cases"])
+router = APIRouter(
+    tags=["cases"],
+    dependencies=[
+        Depends(get_current_user),
+    ],
+)
 
 
 @router.get("/cases", response_model=list[CaseSummary])

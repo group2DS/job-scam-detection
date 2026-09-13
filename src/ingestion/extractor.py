@@ -66,12 +66,30 @@ _WALL_MARKERS = re.compile(
     re.IGNORECASE,
 )
 
-# Vocabulary a genuine listing almost always contains somewhere.
-_JOB_MARKERS = re.compile(
-    r"\b(responsibilit(y|ies)|duties|qualification|requirements?|experience|"
-    r"salary|remuneration|applicants?|candidates?|vacanc(y|ies)|"
-    r"job\s+(description|title|type)|apply|applications?|"
-    r"employment|position|recruit)\b",
+# Vocabulary is split by how much it actually tells us.
+#
+# A single flat list was too generous: brave.com/podcast matched on "apply"
+# and "position", both from a footer reading "Careers... Apply for a position
+# on our team". Almost every commercial site carries those words somewhere,
+# so two matches was a bar that non-listings cleared easily.
+
+# Terms that rarely appear outside an actual job advert.
+_STRONG_MARKERS = re.compile(
+    r"\b(responsibilit(y|ies)|duties|qualifications?|remuneration|"
+    r"vacanc(y|ies)|job\s+(description|title|type|summary)|"
+    r"salary|gross\s+pay|net\s+pay|shortlisted|"
+    r"applicants?\s+(should|must|are)|"
+    r"years?\s+of\s+experience|minimum\s+(qualification|experience)|"
+    r"how\s+to\s+apply|closing\s+date|deadline\s+for\s+application|"
+    r"cv|resume|cover\s+letter|interview)\b",
+    re.IGNORECASE,
+)
+
+# Common on any commercial page. Counted only as supporting evidence,
+# never sufficient on their own.
+_WEAK_MARKERS = re.compile(
+    r"\b(apply|application|position|experience|employment|"
+    r"recruit(ment)?|candidates?|career)\b",
     re.IGNORECASE,
 )
 
@@ -93,11 +111,15 @@ def looks_like_listing(text: str, min_length: int = 200) -> tuple[bool, str]:
     if _WALL_MARKERS.search(stripped[:2000]):
         return False, "it requires a login or blocks automated access"
 
-    if len({m.group(0).lower() for m in _JOB_MARKERS.finditer(stripped)}) < 2:
-        return False, "the page did not read as a job advert"
+    strong = {m.group(0).lower() for m in _STRONG_MARKERS.finditer(stripped)}
+    weak = {m.group(0).lower() for m in _WEAK_MARKERS.finditer(stripped)}
+
+    # At least one strong term is required. Weak terms can only corroborate.
+    if not strong or (len(strong) < 2 and len(weak) < 2):
+        return False, "it did not read as a job advert"
 
     return True, ""
-
+    
 
 def from_text(text: str, source_url: str | None = None) -> Posting:
     """Parse a pasted job description into a Posting."""

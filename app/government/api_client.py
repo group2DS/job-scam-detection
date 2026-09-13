@@ -1,5 +1,9 @@
+"""HTTP client used by the SafeHire government dashboard."""
+
+from __future__ import annotations
+
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import requests
 
@@ -13,7 +17,7 @@ class SafeHireAPIError(Exception):
     def __init__(
         self,
         message: str,
-        status_code: Optional[int] = None,
+        status_code: int | None = None,
         details: Any = None,
     ) -> None:
         super().__init__(message)
@@ -23,12 +27,13 @@ class SafeHireAPIError(Exception):
 
 
 class SafeHireAPIClient:
-    """Client for communicating with the SafeHire FastAPI service."""
+    """Client for the SafeHire FastAPI service."""
 
     def __init__(
         self,
-        base_url: Optional[str] = None,
+        base_url: str | None = None,
         timeout: int = 30,
+        access_token: str | None = None,
     ) -> None:
         configured_url = (
             base_url
@@ -38,9 +43,24 @@ class SafeHireAPIClient:
 
         self.base_url = configured_url.rstrip("/")
         self.timeout = timeout
+        self.access_token = access_token
         self.session = requests.Session()
 
-    def _safe_json(self, response: requests.Response) -> Any:
+    def _headers(self) -> dict[str, str]:
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+
+        if self.access_token:
+            headers["Authorization"] = "Bearer {}".format(
+                self.access_token
+            )
+
+        return headers
+
+    @staticmethod
+    def _safe_json(response: requests.Response) -> Any:
         try:
             return response.json()
         except ValueError:
@@ -50,8 +70,9 @@ class SafeHireAPIClient:
         self,
         method: str,
         path: str,
-        params: Optional[Dict[str, Any]] = None,
-        json_body: Optional[Dict[str, Any]] = None,
+        *,
+        params: dict[str, Any] | None = None,
+        json_body: dict[str, Any] | None = None,
     ) -> Any:
         url = "{}{}".format(self.base_url, path)
 
@@ -61,11 +82,8 @@ class SafeHireAPIClient:
                 url=url,
                 params=params,
                 json=json_body,
+                headers=self._headers(),
                 timeout=self.timeout,
-                headers={
-                    "Accept": "application/json",
-                    "Content-Type": "application/json",
-                },
             )
         except requests.Timeout as exc:
             raise SafeHireAPIError(
@@ -80,34 +98,56 @@ class SafeHireAPIClient:
                 "The SafeHire API request failed."
             ) from exc
 
-        response_data = self._safe_json(response)
+        details = self._safe_json(response)
+
+        if response.status_code == 401:
+            if path == "/api/auth/login":
+                message = "Invalid username or password."
+            else:
+                message = (
+                    "Your session is invalid or has expired. "
+                    "Sign in again."
+                )
+
+            raise SafeHireAPIError(
+                message,
+                status_code=401,
+                details=details,
+            )
+
+        if response.status_code == 403:
+            raise SafeHireAPIError(
+                "You do not have permission to perform this action.",
+                status_code=403,
+                details=details,
+            )
 
         if response.status_code == 404:
             raise SafeHireAPIError(
                 "The requested resource could not be found.",
                 status_code=404,
-                details=response_data,
+                details=details,
             )
 
         if response.status_code == 409:
             raise SafeHireAPIError(
                 "The requested action conflicts with the current case state.",
                 status_code=409,
-                details=response_data,
+                details=details,
             )
 
         if response.status_code == 422:
             raise SafeHireAPIError(
                 "The request was rejected because some values were invalid.",
                 status_code=422,
-                details=response_data,
+                details=details,
             )
 
         if response.status_code >= 500:
             raise SafeHireAPIError(
                 "The SafeHire API encountered an internal error.",
                 status_code=response.status_code,
-                details=response_data,
+                details=details,
             )
 
         if not response.ok:
@@ -116,21 +156,74 @@ class SafeHireAPIClient:
                     response.status_code
                 ),
                 status_code=response.status_code,
-                details=response_data,
+                details=details,
             )
 
         if response.status_code == 204:
             return {}
 
-        if response_data is None:
+        if details is None:
             raise SafeHireAPIError(
                 "The SafeHire API returned an invalid JSON response.",
                 status_code=response.status_code,
             )
 
-        return response_data
+        return details
 
-    def health(self) -> Dict[str, Any]:
+    def login(self, username: str, password: str) -> dict[str, Any]:
+        if not username or not username.strip():
+            raise ValueError("Username is required.")
+
+        if not password:
+            raise ValueError("Password is required.")
+
+        result = self._request(
+            method="POST",
+            path="/api/auth/login",
+            json_body={
+                "username": username.strip(),
+                "password": password,
+            },
+        )
+
+        if not isinstance(result, dict):
+            raise SafeHireAPIError(
+                "The login response was not a JSON object."
+            )
+
+        access_token = result.get("access_token")
+        reviewer = result.get("reviewer")
+
+        if not isinstance(access_token, str) or not access_token.strip():
+            raise SafeHireAPIError(
+                "The login response did not contain an access token."
+            )
+
+        if not isinstance(reviewer, dict):
+            raise SafeHireAPIError(
+                "The login response did not contain a reviewer profile."
+            )
+
+        self.access_token = access_token.strip()
+        return result
+
+    def get_current_user(self) -> dict[str, Any]:
+        result = self._request(
+            method="GET",
+            path="/api/auth/me",
+        )
+
+        if not isinstance(result, dict):
+            raise SafeHireAPIError(
+                "The reviewer profile response was not a JSON object."
+            )
+
+        return result
+
+    def logout(self) -> None:
+        self.access_token = None
+
+    def health(self) -> dict[str, Any]:
         result = self._request(
             method="GET",
             path="/api/health",
@@ -145,17 +238,15 @@ class SafeHireAPIClient:
 
     def get_cases(
         self,
-        risk_level: Optional[str] = None,
-        review_status: Optional[str] = None,
-        is_overseas: Optional[bool] = None,
+        risk_level: str | None = None,
+        review_status: str | None = None,
+        is_overseas: bool | None = None,
         limit: int = 50,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         if limit < 1 or limit > 200:
             raise ValueError("limit must be between 1 and 200")
 
-        params = {
-            "limit": limit,
-        }
+        params: dict[str, Any] = {"limit": limit}
 
         if risk_level:
             params["risk_level"] = risk_level
@@ -179,7 +270,7 @@ class SafeHireAPIClient:
 
         return result
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         result = self._request(
             method="GET",
             path="/api/cases/stats",
@@ -192,7 +283,7 @@ class SafeHireAPIClient:
 
         return result
 
-    def get_case(self, case_id: str) -> Dict[str, Any]:
+    def get_case(self, case_id: str) -> dict[str, Any]:
         if not case_id or not case_id.strip():
             raise ValueError("case_id is required")
 
@@ -212,9 +303,9 @@ class SafeHireAPIClient:
         self,
         case_id: str,
         outcome: str,
-        notes: str,
+        notes: str | None,
         reviewer: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         if not case_id or not case_id.strip():
             raise ValueError("case_id is required")
 
@@ -226,7 +317,7 @@ class SafeHireAPIClient:
 
         payload = {
             "outcome": outcome.strip(),
-            "notes": notes.strip() if notes else "",
+            "notes": notes.strip() if notes else None,
             "reviewer": reviewer.strip(),
         }
 

@@ -16,6 +16,7 @@ from src.db.models import Base, ReviewCase, User, get_session
 
 
 TEST_DATABASE_URL = "sqlite+pysqlite:///:memory:"
+TEST_PASSWORD = "StrongPassword123!"
 
 engine = create_engine(
     TEST_DATABASE_URL,
@@ -53,7 +54,7 @@ def reset_database() -> Generator[None, None, None]:
         session.add(
             User(
                 username="admin",
-                password_hash=hash_password("StrongPassword123!"),
+                password_hash=hash_password(TEST_PASSWORD),
                 display_name="SafeHire Administrator",
                 role="admin",
                 is_active=True,
@@ -62,7 +63,7 @@ def reset_database() -> Generator[None, None, None]:
         session.add(
             User(
                 username="inactive",
-                password_hash=hash_password("StrongPassword123!"),
+                password_hash=hash_password(TEST_PASSWORD),
                 display_name="Inactive Reviewer",
                 role="reviewer",
                 is_active=False,
@@ -98,14 +99,11 @@ def reset_database() -> Generator[None, None, None]:
 
 def login(
     username: str = "admin",
-    password: str = "StrongPassword123!",
+    password: str = TEST_PASSWORD,
 ):
     return client.post(
         "/api/auth/login",
-        json={
-            "username": username,
-            "password": password,
-        },
+        json={"username": username, "password": password},
     )
 
 
@@ -114,6 +112,17 @@ def bearer_headers() -> dict[str, str]:
     assert response.status_code == 200
     token = response.json()["access_token"]
     return {"Authorization": "Bearer {}".format(token)}
+
+
+def decision_payload(
+    outcome: str = "confirmed_scam",
+    notes: str = "Synthetic automated test decision.",
+) -> dict[str, str]:
+    return {
+        "outcome": outcome,
+        "notes": notes,
+        "reviewer": "Ignored Browser Value",
+    }
 
 
 def test_successful_login_returns_token_and_profile():
@@ -151,8 +160,7 @@ def test_inactive_reviewer_is_rejected():
 
 
 def test_auth_me_requires_bearer_token():
-    response = client.get("/api/auth/me")
-    assert response.status_code == 401
+    assert client.get("/api/auth/me").status_code == 401
 
 
 def test_auth_me_rejects_invalid_token():
@@ -160,6 +168,7 @@ def test_auth_me_rejects_invalid_token():
         "/api/auth/me",
         headers={"Authorization": "Bearer invalid-token"},
     )
+
     assert response.status_code == 401
 
 
@@ -176,6 +185,7 @@ def test_auth_me_rejects_expired_token():
         "/api/auth/me",
         headers={"Authorization": "Bearer {}".format(token)},
     )
+
     assert response.status_code == 401
 
 
@@ -202,11 +212,7 @@ def test_auth_me_returns_current_reviewer():
         (
             "post",
             "/api/cases/C-TEST01/decision",
-            {
-                "outcome": "confirmed_scam",
-                "notes": "Synthetic automated test decision.",
-                "reviewer": "Ignored Browser Value",
-            },
+            decision_payload(),
         ),
     ],
 )
@@ -224,10 +230,7 @@ def test_government_routes_require_authentication(
 
 
 def test_authenticated_reviewer_can_list_cases():
-    response = client.get(
-        "/api/cases",
-        headers=bearer_headers(),
-    )
+    response = client.get("/api/cases", headers=bearer_headers())
 
     assert response.status_code == 200
     assert isinstance(response.json(), list)
@@ -258,11 +261,7 @@ def test_authenticated_reviewer_can_submit_decision():
     response = client.post(
         "/api/cases/C-TEST01/decision",
         headers=bearer_headers(),
-        json={
-            "outcome": "confirmed_scam",
-            "notes": "Synthetic automated test decision.",
-            "reviewer": "Ignored Browser Value",
-        },
+        json=decision_payload(),
     )
 
     assert response.status_code == 200
@@ -271,15 +270,11 @@ def test_authenticated_reviewer_can_submit_decision():
     assert body["review_outcome"] == "confirmed_scam"
 
 
-def test_decision_is_persisted():
+def test_decision_is_persisted_with_authenticated_reviewer():
     response = client.post(
         "/api/cases/C-TEST01/decision",
         headers=bearer_headers(),
-        json={
-            "outcome": "confirmed_scam",
-            "notes": "Synthetic automated test decision.",
-            "reviewer": "Ignored Browser Value",
-        },
+        json=decision_payload(),
     )
     assert response.status_code == 200
 
@@ -291,13 +286,59 @@ def test_decision_is_persisted():
         assert case is not None
         assert case.review_status == "resolved"
         assert case.review_outcome == "confirmed_scam"
+        assert case.reviewer == "SafeHire Administrator"
+        assert case.audit_entries
+        assert case.audit_entries[-1].actor == "admin"
     finally:
         session.close()
 
 
-def test_health_endpoint_remains_public():
-    response = client.get("/api/health")
+def test_needs_more_evidence_resolves_case():
+    notes = "Additional registry documentation is required."
+    response = client.post(
+        "/api/cases/C-TEST01/decision",
+        headers=bearer_headers(),
+        json=decision_payload(
+            outcome="needs_more_evidence",
+            notes=notes,
+        ),
+    )
+
     assert response.status_code == 200
+    body = response.json()
+    assert body["review_status"] == "resolved"
+    assert body["review_outcome"] == "needs_more_evidence"
+    assert body["review_notes"] == notes
+
+
+def test_needs_more_evidence_cannot_be_replaced():
+    first_response = client.post(
+        "/api/cases/C-TEST01/decision",
+        headers=bearer_headers(),
+        json=decision_payload(
+            outcome="needs_more_evidence",
+            notes="Additional evidence is required.",
+        ),
+    )
+    assert first_response.status_code == 200
+
+    second_response = client.post(
+        "/api/cases/C-TEST01/decision",
+        headers=bearer_headers(),
+        json=decision_payload(
+            outcome="confirmed_scam",
+            notes="Attempted replacement decision.",
+        ),
+    )
+
+    assert second_response.status_code == 409
+    assert second_response.json()["detail"] == (
+        "This case has already been resolved and cannot be edited."
+    )
+
+
+def test_health_endpoint_remains_public():
+    assert client.get("/api/health").status_code == 200
 
 
 def test_analysis_formats_endpoint_remains_public():

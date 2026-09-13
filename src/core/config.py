@@ -16,6 +16,12 @@ class Settings(BaseSettings):
 
     app_name: str = "Job Scam Detection API"
     version: str = "0.1.0"
+    
+    # Authentication for the government review dashboard.
+    # JWT_SECRET_KEY must be replaced through the environment in deployment.
+    jwt_secret_key: str = "local-development-secret-change-before-deployment"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60
 
     # Database. SQLite locally so the project runs with no services installed.
     # Set DATABASE_URL to a Postgres URL in deployment.

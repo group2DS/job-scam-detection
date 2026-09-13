@@ -16,7 +16,12 @@ from sqlalchemy.orm import Session
 
 from src.api.dependencies.auth import get_current_user
 from src.core.schemas import CaseDetail, CaseSummary, Reason, ReviewDecision
-from src.db.models import AuditEntry, ReviewCase, get_session
+from src.db.models import (
+    AuditEntry,
+    ReviewCase,
+    User,
+    get_session,
+)
 
 router = APIRouter(
     tags=["cases"],
@@ -33,6 +38,7 @@ def list_cases(
     is_overseas: bool | None = None,
     limit: int = Query(50, le=200),
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ) -> list[CaseSummary]:
     stmt = select(ReviewCase).order_by(ReviewCase.created_at.desc())
 
@@ -59,7 +65,7 @@ def list_cases(
 
 
 @router.get("/cases/stats")
-def case_stats(session: Session = Depends(get_session)) -> dict:
+def case_stats(session: Session = Depends(get_session), current_user: User = Depends(get_current_user),) -> dict:
     """Summary tiles for the dashboard header."""
     total = session.scalar(select(func.count()).select_from(ReviewCase)) or 0
     open_cases = (
@@ -121,7 +127,7 @@ def _to_detail(case: ReviewCase) -> CaseDetail:
 
 
 @router.get("/cases/{case_id}", response_model=CaseDetail)
-def get_case(case_id: str, session: Session = Depends(get_session)) -> CaseDetail:
+def get_case(case_id: str, session: Session = Depends(get_session), current_user: User = Depends(get_current_user),) -> CaseDetail:
     case = session.get(ReviewCase, case_id)
     if case is None:
         raise HTTPException(status_code=404, detail="Case not found.")
@@ -133,6 +139,7 @@ def submit_decision(
     case_id: str,
     decision: ReviewDecision,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ) -> CaseDetail:
     """Record a reviewer decision.
 
@@ -150,14 +157,14 @@ def submit_decision(
 
     case.review_outcome = decision.outcome.value
     case.review_notes = decision.notes
-    case.reviewer = decision.reviewer
+    case.reviewer = current_user.username
     case.reviewed_at = datetime.now(timezone.utc)
     case.review_status = "resolved"
 
     session.add(
         AuditEntry(
             case_id=case.case_id,
-            actor=decision.reviewer,
+            actor=current_user.username,
             action=f"Decision recorded: {decision.outcome.value}.",
         )
     )

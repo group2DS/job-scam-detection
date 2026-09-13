@@ -119,7 +119,13 @@ def extract(filename: str, data: bytes, min_chars: int = 40) -> str:
     the file, not for a developer.
     """
     if not data:
-        raise ExtractionError("That file appears to be empty.")
+        # Usually a file the operating system had not finished writing when it
+        # was selected, rather than a genuinely empty document. Say so, since
+        # the fix is simply to try again.
+        raise ExtractionError(
+            "That file came through empty. If you have just saved it, wait a "
+            "moment and try again."
+        )
 
     if len(data) > MAX_BYTES:
         raise ExtractionError(

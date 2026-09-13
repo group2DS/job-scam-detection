@@ -102,3 +102,49 @@ def test_short_genuine_listing_passes_upload_floor():
     )
     assert looks_like_listing(text, min_length=40)[0]
     assert not looks_like_listing(text)[0]   # rejected at the web page floor
+
+# cover the pages that previously slipped through the vocabulary check.
+
+PODCAST_PAGE = """
+Why Non-Dollar Stablecoins Might Strengthen the Dollar
+Navin Vethanayagam unpacks his Stablewoods theory; why non-dollar stablecoins
+may end up reinforcing dollar dominance rather than challenging it, and how an
+AI editor turned a static blockchain encyclopedia into living infrastructure.
+Listen on Spotify Podcasts. Watch on YouTube. Show Notes. Guest List.
+In this episode we discuss what the theory says, why a restricted currency has
+created a hidden opportunity, and where stablecoins are headed next.
+About the show. Careers. Privacy. Terms of use. Apply for a position on our team.
+"""
+
+DASHBOARD_PAGE = """
+Dashboard. Overview. Deployments. Analytics. Speed Insights. Logs. Storage.
+Settings. Your projects will appear here. Import a Git repository to get
+started and deploy your first project. Documentation. Support. Contact sales.
+Careers with us. Apply now to join the team building the platform.
+"""
+
+SHORT_WHATSAPP_LISTING = (
+    "Title: Hotel Staff\n"
+    "Agency: Swift Resources Agency\n"
+    "Location: Qatar\n"
+    "Pay a registration fee of KES 5000 via Mpesa to secure the position. "
+    "Applicants should have experience in hotel service."
+)
+
+
+def test_podcast_page_is_rejected():
+    """Footer career links must not qualify a page as a job listing."""
+    ok, reason = looks_like_listing(PODCAST_PAGE)
+    assert not ok, "an article page was accepted as a job listing"
+    assert reason
+
+
+def test_dashboard_page_is_rejected():
+    ok, _ = looks_like_listing(DASHBOARD_PAGE)
+    assert not ok
+
+
+def test_short_listing_passes_upload_floor():
+    """Uploads use a lower length floor than fetched pages."""
+    assert looks_like_listing(SHORT_WHATSAPP_LISTING, min_length=40)[0]
+    assert not looks_like_listing(SHORT_WHATSAPP_LISTING)[0]

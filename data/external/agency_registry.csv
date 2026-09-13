@@ -1,11 +1,26 @@
-agency_id,agency_name,licence_number,licence_status,status,authorised_destinations,record_is_mock
-A-001,Bright Future Recruitment Agency,NEA/001/2024,active,active,Qatar;UAE;Saudi Arabia,true
-A-002,Skyline Manpower Services,NEA/014/2024,active,active,Qatar;Kuwait,true
-A-003,Nairobi Placement Bureau,NEA/027/2023,active,active,Local,true
-A-004,Gulf Link Employment Agency,NEA/033/2024,active,active,UAE;Oman;Bahrain,true
-A-005,Premier Staffing Solutions Kenya,NEA/041/2025,active,active,Local,true
-A-006,Horizon Labour Export Agency,NEA/052/2022,expired,dormant,Saudi Arabia,true
-A-007,Unity Recruitment Consultants,NEA/060/2024,active,active,Local;Poland,true
-A-008,Eastwind Manpower Agency,NEA/071/2023,revoked,revoked,Qatar,true
-A-009,Coast Employment Services,NEA/080/2025,active,active,Local,true
-A-010,Global Talent Kenya Limited,NEA/091/2024,active,active,UAE;Qatar,true
+agency_id,agency_name,licence_number,licence_status,status,authorised_destinations,county,record_is_mock
+A-001,Bright Future Recruitment Agency,NEA/001/2024,active,active,Qatar;UAE;Saudi Arabia,Nairobi,true
+A-002,Skyline Manpower Services,NEA/014/2024,active,active,Qatar;Kuwait,Nairobi,true
+A-003,Nairobi Placement Bureau,NEA/027/2023,active,active,Local,Nairobi,true
+A-004,Gulf Link Employment Agency,NEA/033/2024,active,active,UAE;Oman;Bahrain,Nairobi,true
+A-005,Premier Staffing Solutions Kenya,NEA/041/2025,active,active,Local,Nairobi,true
+A-006,Horizon Labour Export Agency,NEA/052/2022,expired,dormant,Saudi Arabia,Mombasa,true
+A-007,Unity Recruitment Consultants,NEA/060/2024,active,active,Local;Poland,Nairobi,true
+A-008,Eastwind Manpower Agency,NEA/071/2023,revoked,revoked,Qatar,Nairobi,true
+A-009,Coast Employment Services,NEA/080/2025,active,active,Local,Mombasa,true
+A-010,Global Talent Kenya Limited,NEA/091/2024,active,active,UAE;Qatar,Nairobi,true
+A-011,Al Rashid Manpower Kenya,NEA/103/2024,active,active,Saudi Arabia;Qatar,Nairobi,true
+A-012,Trans-Africa Recruitment Limited,NEA/115/2025,active,active,UAE;Kuwait,Nairobi,true
+A-013,Summit HR Consultants,NEA/122/2024,active,active,Local,Nairobi,true
+A-014,Lakeside Employment Bureau,NEA/134/2023,active,active,Local,Kisumu,true
+A-015,Rift Valley Manpower Agency,NEA/141/2025,active,active,Local;Qatar,Nakuru,true
+A-016,Meridian Staffing Kenya,NEA/155/2024,active,active,Local,Nairobi,true
+A-017,Emirates Bridge Recruitment,NEA/163/2023,suspended,dormant,UAE,Nairobi,true
+A-018,Pearl Manpower Services,NEA/170/2025,active,active,Oman;Bahrain,Mombasa,true
+A-019,Anchor Employment Agency,NEA/188/2024,active,active,Local,Eldoret,true
+A-020,Northstar Recruitment Kenya,NEA/195/2025,active,active,Local;Poland;Romania,Nairobi,true
+A-021,Desert Rose Manpower Limited,NEA/204/2022,expired,dormant,Saudi Arabia,Nairobi,true
+A-022,Cascade Staffing Solutions,NEA/216/2024,active,active,Local,Nairobi,true
+A-023,Harambee Employment Services,NEA/228/2025,active,active,Local,Nairobi,true
+A-024,Blue Nile Recruitment Agency,NEA/235/2023,revoked,revoked,Lebanon,Nairobi,true
+A-025,Savanna Manpower Consultants,NEA/247/2024,active,active,Qatar;UAE,Nairobi,true

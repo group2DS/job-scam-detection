@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.api.dependencies.auth import get_current_user
 from src.core.schemas import LoginRequest, LoginResponse, ReviewerProfile
 from src.core.security import create_access_token, verify_password
 from src.db.models import User, get_session
@@ -73,3 +74,19 @@ def login(
         token_type="bearer",
         reviewer=build_reviewer_profile(user),
     )
+
+@router.get(
+    "/me",
+    response_model=ReviewerProfile,
+    responses={
+        401: {
+            "description": "Authentication required",
+        },
+    },
+)
+def get_my_profile(
+    current_user: User = Depends(get_current_user),
+) -> ReviewerProfile:
+    """Return the profile of the authenticated reviewer."""
+
+    return build_reviewer_profile(current_user)

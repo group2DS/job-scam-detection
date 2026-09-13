@@ -1,13 +1,13 @@
 """Government review endpoints.
 
 The dashboard reads from the same database that the analysis endpoint writes
-to. Referred cases are therefore immediately available to authenticated
-government reviewers.
+to. Referred cases are immediately available to authenticated government
+reviewers.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
@@ -32,12 +32,30 @@ def list_cases(
         description="open|resolved",
     ),
     is_overseas: bool | None = None,
+    destination_country: str | None = Query(
+        default=None,
+        description="Exact destination country",
+    ),
+    date_from: date | None = Query(
+        default=None,
+        description="Include cases created on or after this date",
+    ),
+    date_to: date | None = Query(
+        default=None,
+        description="Include cases created on or before this date",
+    ),
     limit: int = Query(default=50, ge=1, le=200),
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> list[CaseSummary]:
-    """Return referred cases visible to an authenticated reviewer."""
+    """Return referred cases matching the selected dashboard filters."""
     del current_user
+
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(
+            status_code=422,
+            detail="date_from must be on or before date_to.",
+        )
 
     statement = select(ReviewCase).order_by(
         ReviewCase.created_at.desc()
@@ -56,6 +74,32 @@ def list_cases(
     if is_overseas is not None:
         statement = statement.where(
             ReviewCase.is_overseas == is_overseas
+        )
+
+    if destination_country and destination_country.strip():
+        statement = statement.where(
+            func.lower(ReviewCase.destination_country)
+            == destination_country.strip().lower()
+        )
+
+    if date_from:
+        start_datetime = datetime.combine(
+            date_from,
+            time.min,
+            tzinfo=timezone.utc,
+        )
+        statement = statement.where(
+            ReviewCase.created_at >= start_datetime
+        )
+
+    if date_to:
+        end_datetime = datetime.combine(
+            date_to + timedelta(days=1),
+            time.min,
+            tzinfo=timezone.utc,
+        )
+        statement = statement.where(
+            ReviewCase.created_at < end_datetime
         )
 
     cases = session.scalars(statement.limit(limit)).all()
@@ -125,6 +169,30 @@ def case_stats(
         "suspicious": by_risk.get("suspicious", 0),
         "overseas_cases": overseas,
     }
+
+
+@router.get("/cases/countries", response_model=list[str])
+def list_destination_countries(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> list[str]:
+    """Return distinct destination countries available in referred cases."""
+    del current_user
+
+    statement = (
+        select(ReviewCase.destination_country)
+        .where(ReviewCase.destination_country.is_not(None))
+        .distinct()
+        .order_by(ReviewCase.destination_country)
+    )
+
+    countries = session.scalars(statement).all()
+
+    return [
+        country.strip()
+        for country in countries
+        if country and country.strip()
+    ]
 
 
 def _to_detail(case: ReviewCase) -> CaseDetail:

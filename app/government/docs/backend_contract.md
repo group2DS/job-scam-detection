@@ -1,4 +1,4 @@
-# SafeHire Government Dashboard Backend Contract
+# Hakiki Hire Government Dashboard Backend Contract
 
 ## Verification information
 

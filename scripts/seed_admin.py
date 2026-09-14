@@ -1,10 +1,13 @@
-"""Create the initial SafeHire administrator account."""
+"""Create the initial Hakiki Hire administrator account."""
+
+from __future__ import annotations
 
 import argparse
 import getpass
 import os
 import sys
 from pathlib import Path
+from typing import Tuple
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -24,11 +27,11 @@ MINIMUM_PASSWORD_LENGTH = 12
 
 
 def parse_arguments() -> argparse.Namespace:
-    """Parse command-line arguments."""
+    """Parse command-line options for local or deployment seeding."""
 
     parser = argparse.ArgumentParser(
         description=(
-            "Create the initial SafeHire administrator."
+            "Create the initial Hakiki Hire administrator account."
         )
     )
 
@@ -36,44 +39,12 @@ def parse_arguments() -> argparse.Namespace:
         "--non-interactive",
         action="store_true",
         help=(
-            "Read administrator details from environment "
-            "variables instead of interactive prompts."
+            "Read administrator details from environment variables "
+            "instead of interactive prompts."
         ),
     )
 
     return parser.parse_args()
-
-
-def require_value(
-    value: str | None,
-    environment_name: str,
-) -> str:
-    """Require a non-empty environment value."""
-
-    cleaned_value = (value or "").strip()
-
-    if not cleaned_value:
-        raise ValueError(
-            "{} is required.".format(
-                environment_name
-            )
-        )
-
-    return cleaned_value
-
-
-def validate_password(password: str) -> str:
-    """Validate the administrator password."""
-
-    if len(password) < MINIMUM_PASSWORD_LENGTH:
-        raise ValueError(
-            "The administrator password must contain "
-            "at least {} characters.".format(
-                MINIMUM_PASSWORD_LENGTH
-            )
-        )
-
-    return password
 
 
 def prompt_non_empty(label: str) -> str:
@@ -88,8 +59,37 @@ def prompt_non_empty(label: str) -> str:
         print("This value is required.")
 
 
+def require_environment_value(
+    variable_name: str,
+) -> str:
+    """Return a required non-empty environment-variable value."""
+
+    value = os.getenv(variable_name, "").strip()
+
+    if not value:
+        raise ValueError(
+            "{} is required in non-interactive mode.".format(
+                variable_name
+            )
+        )
+
+    return value
+
+
+def validate_password(password: str) -> str:
+    """Validate the administrator password without displaying it."""
+
+    if len(password) < MINIMUM_PASSWORD_LENGTH:
+        raise ValueError(
+            "The administrator password must contain at least "
+            "{} characters.".format(MINIMUM_PASSWORD_LENGTH)
+        )
+
+    return password
+
+
 def prompt_password() -> str:
-    """Prompt for and confirm a password."""
+    """Prompt for a password and matching confirmation."""
 
     while True:
         password = getpass.getpass(
@@ -110,8 +110,8 @@ def prompt_password() -> str:
             print(str(error))
 
 
-def get_interactive_credentials() -> tuple[str, str, str]:
-    """Collect administrator details interactively."""
+def get_interactive_credentials() -> Tuple[str, str, str]:
+    """Collect administrator credentials using terminal prompts."""
 
     username = prompt_non_empty(
         "Administrator username: "
@@ -126,23 +126,20 @@ def get_interactive_credentials() -> tuple[str, str, str]:
     return username, display_name, password
 
 
-def get_environment_credentials() -> tuple[str, str, str]:
-    """Read administrator details from environment variables."""
+def get_environment_credentials() -> Tuple[str, str, str]:
+    """Read administrator credentials from deployment variables."""
 
-    username = require_value(
-        os.getenv("ADMIN_USERNAME"),
-        "ADMIN_USERNAME",
+    username = require_environment_value(
+        "ADMIN_USERNAME"
     ).lower()
 
-    display_name = require_value(
-        os.getenv("ADMIN_DISPLAY_NAME"),
-        "ADMIN_DISPLAY_NAME",
+    display_name = require_environment_value(
+        "ADMIN_DISPLAY_NAME"
     )
 
     password = validate_password(
-        require_value(
-            os.getenv("ADMIN_PASSWORD"),
-            "ADMIN_PASSWORD",
+        require_environment_value(
+            "ADMIN_PASSWORD"
         )
     )
 
@@ -154,7 +151,7 @@ def create_administrator(
     display_name: str,
     password: str,
 ) -> bool:
-    """Create an administrator when the username is available."""
+    """Create an administrator unless the username already exists."""
 
     init_db()
 
@@ -167,7 +164,9 @@ def create_administrator(
 
         if existing_user is not None:
             print(
-                "A user with that username already exists."
+                "A user with username '{}' already exists.".format(
+                    username
+                )
             )
             return False
 
@@ -187,30 +186,32 @@ def create_administrator(
         except SQLAlchemyError:
             session.rollback()
             print(
-                "The administrator account could not be "
-                "created because of a database error."
+                "The Hakiki Hire administrator account could not "
+                "be created because of a database error."
             )
             raise
 
         print(
-            "Administrator account created successfully."
+            "Hakiki Hire administrator account created successfully."
         )
-
         print(
             "Username: {}".format(
                 administrator.username
             )
         )
-
         print(
             "Display name: {}".format(
                 administrator.display_name
             )
         )
-
         print(
             "Role: {}".format(
                 administrator.role
+            )
+        )
+        print(
+            "Active: {}".format(
+                administrator.is_active
             )
         )
 
@@ -218,20 +219,24 @@ def create_administrator(
 
 
 def main() -> None:
-    """Run the administrator seeding workflow."""
+    """Run the interactive or deployment-safe seeding workflow."""
 
     arguments = parse_arguments()
 
     try:
         if arguments.non_interactive:
-            credentials = get_environment_credentials()
+            username, display_name, password = (
+                get_environment_credentials()
+            )
         else:
-            credentials = get_interactive_credentials()
+            username, display_name, password = (
+                get_interactive_credentials()
+            )
 
         create_administrator(
-            username=credentials[0],
-            display_name=credentials[1],
-            password=credentials[2],
+            username=username,
+            display_name=display_name,
+            password=password,
         )
 
     except ValueError as error:

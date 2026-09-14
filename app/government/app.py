@@ -1,4 +1,4 @@
-"""SafeHire Government Dashboard with branded authentication."""
+"""SafeHire Government Dashboard with authentication and dynamic analytics."""
 
 from html import escape
 
@@ -7,8 +7,10 @@ import streamlit as st
 from src.core.schemas import ReviewOutcome
 
 try:
+    from app.government.analytics import render_filtered_queue_analytics
     from app.government.api_client import SafeHireAPIClient, SafeHireAPIError
-except ModuleNotFoundError:
+except ImportError:
+    from analytics import render_filtered_queue_analytics
     from api_client import SafeHireAPIClient, SafeHireAPIError
 
 
@@ -144,131 +146,287 @@ def apply_styles():
             --cyan: #74d4ff;
             --page: #f4f7fb;
             --text: #10233b;
+            --body: #334155;
             --muted: #64748b;
             --border: #dbe3ec;
         }
+
         .stApp { background: var(--page); }
-        .block-container { max-width: 1400px; padding-top: .8rem; padding-bottom: 3rem; }
-
-        .safehire-hero {
-            position: relative; overflow: hidden; display: flex; gap: 1rem;
-            min-height: 205px; padding: 1.9rem 2rem; margin: -.8rem 0 1.8rem;
-            background: linear-gradient(135deg, var(--navy), var(--blue));
-            border-radius: 0 0 18px 18px;
-            box-shadow: 0 18px 34px rgba(15,23,42,.22);
-        }
-        .safehire-hero::after {
-            content: ""; position: absolute; width: 170px; height: 170px;
-            right: -43px; bottom: -101px; border: 25px solid rgba(63,145,188,.18);
-            border-radius: 50%;
-        }
-        .hero-icon, .login-mark {
-            position: relative; z-index: 2; display: flex; align-items: center;
-            justify-content: center; color: #fff !important;
-            border: 1px solid rgba(255,255,255,.42);
-            background: rgba(255,255,255,.08); border-radius: 14px;
-        }
-        .hero-icon { width: 44px; height: 44px; flex: 0 0 44px; margin-top: 1rem; }
-        .hero-content { position: relative; z-index: 2; flex: 1; }
-        .hero-eyebrow, .login-kicker {
-            color: var(--cyan) !important; -webkit-text-fill-color: var(--cyan) !important;
-            font-size: .72rem; font-weight: 800; letter-spacing: .14em;
-            text-transform: uppercase;
-        }
-        .hero-title { color: #fff !important; -webkit-text-fill-color: #fff !important;
-            font-size: 2rem; font-weight: 800; line-height: 1.15; margin-top: .45rem; }
-        .hero-description { max-width: 760px; color: #fff !important;
-            -webkit-text-fill-color: #fff !important; font-size: .98rem;
-            line-height: 1.65; margin-top: .85rem; }
-        .hero-environment { display: inline-block; color: #fff !important;
-            -webkit-text-fill-color: #fff !important; background: rgba(255,255,255,.06);
-            border: 1px solid rgba(255,255,255,.46); border-radius: 999px;
-            font-size: .7rem; font-weight: 800; margin-top: 1rem; padding: .45rem .75rem; }
-
-        .login-heading { text-align: center; margin: 1rem 0 1.7rem; }
-        .login-heading-title { color: var(--navy) !important; font-size: 1.8rem;
-            font-weight: 800; }
-        .login-heading-copy { color: var(--muted) !important; margin-top: .35rem; }
-        .login-brand-panel {
-            position: relative; overflow: hidden; min-height: 470px; padding: 3rem;
-            background: linear-gradient(145deg, var(--navy), var(--blue));
-            border-radius: 22px; box-shadow: 0 22px 50px rgba(15,23,42,.18);
-        }
-        .login-brand-panel::after {
-            content: ""; position: absolute; width: 290px; height: 290px;
-            right: -130px; bottom: -145px; border: 42px solid rgba(116,212,255,.13);
-            border-radius: 50%;
-        }
-        .login-mark { width: 56px; height: 56px; font-size: 1.5rem; }
-        .login-kicker { position: relative; z-index: 2; margin-top: 2rem; }
-        .login-title { position: relative; z-index: 2; color: #fff !important;
-            -webkit-text-fill-color: #fff !important; font-size: 2.35rem;
-            font-weight: 800; line-height: 1.14; margin-top: .65rem; }
-        .login-copy { position: relative; z-index: 2; color: #dbeafe !important;
-            -webkit-text-fill-color: #dbeafe !important; line-height: 1.7;
-            margin-top: 1rem; max-width: 420px; }
-        .login-chip { position: relative; z-index: 2; display: inline-block;
-            margin-top: 2rem; padding: .45rem .8rem; color: #bae6fd !important;
-            -webkit-text-fill-color: #bae6fd !important; border-radius: 999px;
-            border: 1px solid rgba(255,255,255,.22); background: rgba(255,255,255,.07);
-            font-size: .76rem; font-weight: 700; }
-        .login-form-heading { color: var(--text) !important; font-size: 1.45rem;
-            font-weight: 800; margin-top: .3rem; }
-        .login-form-copy { color: var(--muted) !important; margin: .35rem 0 1rem; }
-        .login-footer { text-align: center; color: var(--muted) !important;
-            font-size: .78rem; margin-top: 1rem; }
-
-        div[data-testid="stForm"] {
-            background: #fff !important; border: 1px solid var(--border) !important;
-            border-radius: 18px !important; box-shadow: 0 20px 44px rgba(15,23,42,.11);
-            padding: 1.5rem !important;
-        }
-        div[data-testid="stFormSubmitButton"] button {
-            min-height: 46px !important; color: #fff !important; border: none !important;
-            border-radius: 9px !important; font-weight: 750 !important;
-            background: linear-gradient(135deg, #075985, #0a6a96) !important;
-        }
-        div[data-testid="stFormSubmitButton"] button p {
-            color: #fff !important; -webkit-text-fill-color: #fff !important;
+        .block-container {
+            max-width: 1400px;
+            padding-top: .8rem;
+            padding-bottom: 3rem;
         }
 
+        /* Main content contrast */
+        div[data-testid="stMainBlockContainer"] {
+            color: var(--body) !important;
+        }
         div[data-testid="stMainBlockContainer"] h1,
         div[data-testid="stMainBlockContainer"] h2,
         div[data-testid="stMainBlockContainer"] h3,
-        div[data-testid="stMainBlockContainer"] h4 { color: var(--text) !important; }
+        div[data-testid="stMainBlockContainer"] h4,
+        div[data-testid="stMainBlockContainer"] h5,
+        div[data-testid="stMainBlockContainer"] h6 {
+            color: var(--text) !important;
+            -webkit-text-fill-color: var(--text) !important;
+        }
         div[data-testid="stMainBlockContainer"] p,
-        div[data-testid="stMainBlockContainer"] label { color: #334155 !important; }
+        div[data-testid="stMainBlockContainer"] label,
+        div[data-testid="stMainBlockContainer"] li {
+            color: var(--body) !important;
+            -webkit-text-fill-color: var(--body) !important;
+        }
 
-        .badge { display: inline-block; background: #fff; border: 1px solid;
-            border-radius: 999px; font-size: .8rem; font-weight: 700;
-            margin-right: .3rem; padding: .22rem .65rem; }
-        .case-card { background: #fff; border: 1px solid var(--border);
-            border-radius: 14px; box-shadow: 0 3px 12px rgba(15,23,42,.04);
-            margin-bottom: .65rem; padding: 1.1rem; }
+        .safehire-hero {
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            gap: 1rem;
+            min-height: 205px;
+            padding: 1.9rem 2rem;
+            margin: -.8rem 0 1.8rem;
+            background: linear-gradient(135deg, var(--navy), var(--blue));
+            border-radius: 0 0 18px 18px;
+            box-shadow: 0 18px 34px rgba(15, 23, 42, .22);
+        }
+        .safehire-hero::after,
+        .login-brand-panel::after {
+            content: "";
+            position: absolute;
+            border-radius: 50%;
+            border-style: solid;
+            border-color: rgba(116, 212, 255, .13);
+        }
+        .safehire-hero::after {
+            width: 170px;
+            height: 170px;
+            right: -43px;
+            bottom: -101px;
+            border-width: 25px;
+        }
+        .hero-icon,
+        .login-mark {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff !important;
+            -webkit-text-fill-color: #fff !important;
+            border: 1px solid rgba(255, 255, 255, .42);
+            background: rgba(255, 255, 255, .08);
+            border-radius: 14px;
+        }
+        .hero-icon {
+            width: 44px;
+            height: 44px;
+            flex: 0 0 44px;
+            margin-top: 1rem;
+        }
+        .hero-content { position: relative; z-index: 2; flex: 1; }
+        .hero-eyebrow,
+        .login-kicker {
+            color: var(--cyan) !important;
+            -webkit-text-fill-color: var(--cyan) !important;
+            font-size: .72rem;
+            font-weight: 800;
+            letter-spacing: .14em;
+            text-transform: uppercase;
+        }
+        .hero-title {
+            color: #fff !important;
+            -webkit-text-fill-color: #fff !important;
+            font-size: 2rem;
+            font-weight: 800;
+            line-height: 1.15;
+            margin-top: .45rem;
+        }
+        .hero-description {
+            max-width: 760px;
+            color: #fff !important;
+            -webkit-text-fill-color: #fff !important;
+            font-size: .98rem;
+            line-height: 1.65;
+            margin-top: .85rem;
+        }
+        .hero-environment {
+            display: inline-block;
+            color: #fff !important;
+            -webkit-text-fill-color: #fff !important;
+            background: rgba(255, 255, 255, .06);
+            border: 1px solid rgba(255, 255, 255, .46);
+            border-radius: 999px;
+            font-size: .7rem;
+            font-weight: 800;
+            margin-top: 1rem;
+            padding: .45rem .75rem;
+        }
+
+        .login-heading { text-align: center; margin: 1rem 0 1.7rem; }
+        .login-heading-title {
+            color: var(--navy) !important;
+            -webkit-text-fill-color: var(--navy) !important;
+            font-size: 1.8rem;
+            font-weight: 800;
+        }
+        .login-heading-copy { color: var(--muted) !important; }
+        .login-brand-panel {
+            position: relative;
+            overflow: hidden;
+            min-height: 470px;
+            padding: 3rem;
+            background: linear-gradient(145deg, var(--navy), var(--blue));
+            border-radius: 22px;
+            box-shadow: 0 22px 50px rgba(15, 23, 42, .18);
+        }
+        .login-brand-panel::after {
+            width: 290px;
+            height: 290px;
+            right: -130px;
+            bottom: -145px;
+            border-width: 42px;
+        }
+        .login-mark { width: 56px; height: 56px; font-size: 1.5rem; }
+        .login-kicker { position: relative; z-index: 2; margin-top: 2rem; }
+        .login-title {
+            position: relative;
+            z-index: 2;
+            color: #fff !important;
+            -webkit-text-fill-color: #fff !important;
+            font-size: 2.35rem;
+            font-weight: 800;
+            line-height: 1.14;
+            margin-top: .65rem;
+        }
+        .login-copy {
+            position: relative;
+            z-index: 2;
+            color: #dbeafe !important;
+            -webkit-text-fill-color: #dbeafe !important;
+            line-height: 1.7;
+            margin-top: 1rem;
+            max-width: 420px;
+        }
+        .login-chip {
+            position: relative;
+            z-index: 2;
+            display: inline-block;
+            margin-top: 2rem;
+            padding: .45rem .8rem;
+            color: #bae6fd !important;
+            -webkit-text-fill-color: #bae6fd !important;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, .22);
+            background: rgba(255, 255, 255, .07);
+            font-size: .76rem;
+            font-weight: 700;
+        }
+        .login-form-heading {
+            color: var(--text) !important;
+            -webkit-text-fill-color: var(--text) !important;
+            font-size: 1.45rem;
+            font-weight: 800;
+            margin-top: .3rem;
+        }
+        .login-form-copy,
+        .login-footer { color: var(--muted) !important; }
+        .login-footer { text-align: center; font-size: .78rem; margin-top: 1rem; }
+
+        div[data-testid="stForm"] {
+            background: #fff !important;
+            border: 1px solid var(--border) !important;
+            border-radius: 18px !important;
+            box-shadow: 0 20px 44px rgba(15, 23, 42, .11);
+            padding: 1.5rem !important;
+        }
+        div[data-testid="stFormSubmitButton"] button {
+            min-height: 46px !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 9px !important;
+            font-weight: 750 !important;
+            background: linear-gradient(135deg, #075985, #0a6a96) !important;
+        }
+        div[data-testid="stFormSubmitButton"] button p {
+            color: #fff !important;
+            -webkit-text-fill-color: #fff !important;
+        }
+
+        .badge {
+            display: inline-block;
+            background: #fff;
+            border: 1px solid;
+            border-radius: 999px;
+            font-size: .8rem;
+            font-weight: 700;
+            margin-right: .3rem;
+            padding: .22rem .65rem;
+        }
+        .case-card,
+        div[data-testid="stVerticalBlockBorderWrapper"] {
+            background: #fff !important;
+            border: 1px solid var(--border) !important;
+            border-radius: 14px !important;
+            box-shadow: 0 4px 14px rgba(15, 23, 42, .05);
+        }
+        .case-card { margin-bottom: .65rem; padding: 1.1rem; }
         .case-card h3 { color: #0f172a !important; margin: 0 0 .3rem; }
-        .case-entity { color: #334155 !important; }
+        .case-entity { color: var(--body) !important; }
         .case-meta { color: var(--muted) !important; font-size: .84rem; margin-top: .6rem; }
-        .empty-state { background: #fff; border: 1px dashed #94a3b8;
-            border-radius: 14px; padding: 2rem; text-align: center; }
-        div[data-testid="stMetric"] { background: #fff; border: 1px solid var(--border);
-            border-radius: 14px; box-shadow: 0 3px 12px rgba(15,23,42,.04);
-            padding: 1rem; }
+        .empty-state {
+            background: #fff;
+            border: 1px dashed #94a3b8;
+            border-radius: 14px;
+            padding: 2rem;
+            text-align: center;
+        }
+        div[data-testid="stMetric"] {
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            box-shadow: 0 3px 12px rgba(15, 23, 42, .04);
+            padding: 1rem;
+        }
         div[data-testid="stMetricValue"] { color: #0f172a !important; font-weight: 800; }
         div[data-testid="stTextInput"] input,
         div[data-testid="stTextArea"] textarea,
-        div[data-baseweb="select"] > div { background: #fff !important;
-            color: #0f172a !important; border-color: #cbd5e1 !important; }
-        textarea:disabled { background: #f8fafc !important; color: #334155 !important;
-            opacity: 1 !important; }
+        div[data-baseweb="select"] > div {
+            background: #fff !important;
+            color: #0f172a !important;
+            border-color: #cbd5e1 !important;
+        }
+        textarea:disabled {
+            background: #fff !important;
+            color: var(--body) !important;
+            -webkit-text-fill-color: var(--body) !important;
+            border: 1px solid #cbd5e1 !important;
+            opacity: 1 !important;
+        }
+        div[data-testid="stCaptionContainer"] p {
+            color: var(--muted) !important;
+            -webkit-text-fill-color: var(--muted) !important;
+        }
 
-        .reviewer-panel { background: rgba(255,255,255,.08);
-            border: 1px solid rgba(255,255,255,.18); border-radius: 12px;
-            margin: .8rem 0 1rem; padding: .85rem; }
-        .reviewer-name { color: #fff !important; -webkit-text-fill-color: #fff !important;
-            font-weight: 750; }
-        .reviewer-role { color: #bae6fd !important;
-            -webkit-text-fill-color: #bae6fd !important; font-size: .76rem;
-            margin-top: .15rem; text-transform: capitalize; }
+        .reviewer-panel {
+            background: rgba(255, 255, 255, .08);
+            border: 1px solid rgba(255, 255, 255, .18);
+            border-radius: 12px;
+            margin: .8rem 0 1rem;
+            padding: .85rem;
+        }
+        .reviewer-name {
+            color: #fff !important;
+            -webkit-text-fill-color: #fff !important;
+            font-weight: 750;
+        }
+        .reviewer-role {
+            color: #bae6fd !important;
+            -webkit-text-fill-color: #bae6fd !important;
+            font-size: .76rem;
+            margin-top: .15rem;
+            text-transform: capitalize;
+        }
 
         section[data-testid="stSidebar"],
         section[data-testid="stSidebar"] > div,
@@ -282,18 +440,25 @@ def apply_styles():
         section[data-testid="stSidebar"] p,
         section[data-testid="stSidebar"] label,
         section[data-testid="stSidebar"] span {
-            color: #fff !important; -webkit-text-fill-color: #fff !important;
+            color: #fff !important;
+            -webkit-text-fill-color: #fff !important;
         }
-        section[data-testid="stSidebar"] div[data-baseweb="select"] > div {
-            background: rgba(255,255,255,.10) !important;
-            border-color: rgba(255,255,255,.28) !important;
+        section[data-testid="stSidebar"] div[data-baseweb="select"] > div,
+        section[data-testid="stSidebar"] div[data-testid="stDateInput"] input {
+            background: rgba(255, 255, 255, .10) !important;
+            border-color: rgba(255, 255, 255, .28) !important;
+            color: #fff !important;
+            -webkit-text-fill-color: #fff !important;
         }
-        section[data-testid="stSidebar"] hr { border-color: rgba(255,255,255,.20) !important; }
+        section[data-testid="stSidebar"] hr { border-color: rgba(255, 255, 255, .20) !important; }
         section[data-testid="stSidebar"] div[data-testid="stAlert"] {
-            background: rgba(220,252,231,.96) !important; }
+            background: rgba(220, 252, 231, .96) !important;
+        }
         section[data-testid="stSidebar"] div[data-testid="stAlert"] p,
         section[data-testid="stSidebar"] div[data-testid="stAlert"] span {
-            color: #166534 !important; -webkit-text-fill-color: #166534 !important; }
+            color: #166534 !important;
+            -webkit-text-fill-color: #166534 !important;
+        }
 
         @media (max-width: 850px) {
             .login-brand-panel { min-height: auto; padding: 2rem; }
@@ -316,7 +481,10 @@ def initialise_state():
         "filter_risk": "All",
         "filter_status": "All",
         "filter_market": "All",
-        "filter_limit": 50,
+        "filter_country": "All",
+        "filter_date_from": None,
+        "filter_date_to": None,
+        "filter_limit": 200,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -341,7 +509,9 @@ def clear_authentication():
 def handle_api_error(error):
     if error.status_code == 401:
         clear_authentication()
-        st.session_state.login_error = "Your session has expired. Please sign in again."
+        st.session_state.login_error = (
+            "Your session has expired. Please sign in again."
+        )
         st.rerun()
     st.error(error.message)
     if error.details:
@@ -355,8 +525,13 @@ def hide_sidebar_for_login():
         <style>
         section[data-testid="stSidebar"],
         button[data-testid="stSidebarCollapsedControl"],
-        div[data-testid="collapsedControl"] { display: none !important; }
-        .block-container { max-width: 1120px !important; padding-top: 1.4rem !important; }
+        div[data-testid="collapsedControl"] {
+            display: none !important;
+        }
+        .block-container {
+            max-width: 1120px !important;
+            padding-top: 1.4rem !important;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -365,19 +540,19 @@ def hide_sidebar_for_login():
 
 def render_login():
     hide_sidebar_for_login()
-
     st.markdown(
         """
         <div class="login-heading">
             <div class="login-heading-title">SafeHire Government Portal</div>
-            <div class="login-heading-copy">Protected access for authorised government reviewers</div>
+            <div class="login-heading-copy">
+                Protected access for authorised government reviewers
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
     brand_column, form_column = st.columns([1.08, .92], gap="large")
-
     with brand_column:
         st.markdown(
             """
@@ -387,7 +562,8 @@ def render_login():
                 <div class="login-title">SafeHire<br>Reviewer Access</div>
                 <div class="login-copy">
                     Review referred job postings, examine risk and verification
-                    evidence, and record accountable decisions through the protected portal.
+                    evidence, and record accountable decisions through the
+                    protected portal.
                 </div>
                 <div class="login-chip">Secure reviewer authentication</div>
             </div>
@@ -399,11 +575,12 @@ def render_login():
         st.markdown(
             """
             <div class="login-form-heading">Welcome back</div>
-            <div class="login-form-copy">Sign in using your authorised reviewer account.</div>
+            <div class="login-form-copy">
+                Sign in using your authorised reviewer account.
+            </div>
             """,
             unsafe_allow_html=True,
         )
-
         if st.session_state.get("login_error"):
             st.error(st.session_state.pop("login_error"))
 
@@ -411,7 +588,6 @@ def render_login():
             "API environment",
             ["Local API", "Live API"],
             key="login_environment",
-            help="Use Local API during development and Live API for deployment.",
         )
         st.session_state.api_environment = environment
 
@@ -428,11 +604,13 @@ def render_login():
             submitted = st.form_submit_button(
                 "Sign in securely",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
             )
 
         st.markdown(
-            '<div class="login-footer">Access is restricted to authorised reviewers.</div>',
+            '<div class="login-footer">'
+            "Access is restricted to authorised reviewers."
+            "</div>",
             unsafe_allow_html=True,
         )
 
@@ -463,8 +641,10 @@ def render_login():
 
 
 def render_header():
-    environment_label = (
-        "LIVE API" if st.session_state.get("api_environment") == "Live API" else "LOCAL API"
+    environment = (
+        "LIVE API"
+        if st.session_state.get("api_environment") == "Live API"
+        else "LOCAL API"
     )
     st.markdown(
         """
@@ -474,13 +654,13 @@ def render_header():
                 <div class="hero-eyebrow">GOVERNMENT REVIEW PORTAL</div>
                 <div class="hero-title">SafeHire Government<br>Dashboard</div>
                 <div class="hero-description">
-                    Review referred job postings, examine risk and verification evidence,
-                    and record accountable reviewer decisions.
+                    Review referred job postings, examine risk and verification
+                    evidence, and record accountable reviewer decisions.
                 </div>
                 <div class="hero-environment">{environment}</div>
             </div>
         </div>
-        """.format(environment=environment_label),
+        """.format(environment=environment),
         unsafe_allow_html=True,
     )
 
@@ -489,7 +669,10 @@ def reset_filters():
     st.session_state.filter_risk = "All"
     st.session_state.filter_status = "All"
     st.session_state.filter_market = "All"
-    st.session_state.filter_limit = 50
+    st.session_state.filter_country = "All"
+    st.session_state.filter_date_from = None
+    st.session_state.filter_date_to = None
+    st.session_state.filter_limit = 200
 
 
 def render_sidebar(client):
@@ -510,10 +693,20 @@ def render_sidebar(client):
         unsafe_allow_html=True,
     )
 
-    if st.sidebar.button("Sign out", use_container_width=True):
+    if st.sidebar.button("Sign out", width="stretch"):
         client.logout()
         clear_authentication()
         st.rerun()
+
+    try:
+        country_options = client.get_destination_countries()
+    except SafeHireAPIError as error:
+        handle_api_error(error)
+        country_options = []
+
+    valid_country_options = ["All", *country_options]
+    if st.session_state.get("filter_country", "All") not in valid_country_options:
+        st.session_state.filter_country = "All"
 
     st.sidebar.divider()
     st.sidebar.subheader("Queue filters")
@@ -532,13 +725,38 @@ def render_sidebar(client):
         ["All", "Local", "Overseas"],
         key="filter_market",
     )
-    limit = st.sidebar.slider(
-        "Maximum cases", 1, 200, key="filter_limit"
+    country_label = st.sidebar.selectbox(
+        "Destination country",
+        valid_country_options,
+        key="filter_country",
     )
+    date_from = st.sidebar.date_input(
+        "From date",
+        value=st.session_state.get("filter_date_from"),
+        key="filter_date_from",
+    )
+    date_to = st.sidebar.date_input(
+        "To date",
+        value=st.session_state.get("filter_date_to"),
+        key="filter_date_to",
+    )
+    limit = st.sidebar.slider(
+        "Maximum cases",
+        min_value=1,
+        max_value=200,
+        key="filter_limit",
+    )
+
+    dates_invalid = bool(date_from and date_to and date_from > date_to)
+    if dates_invalid:
+        st.sidebar.error("From date must be on or before To date.")
+
+    if st.sidebar.button("Refresh dashboard", width="stretch"):
+        st.rerun()
     st.sidebar.button(
         "Reset filters",
         on_click=reset_filters,
-        use_container_width=True,
+        width="stretch",
     )
 
     st.sidebar.divider()
@@ -546,8 +764,12 @@ def render_sidebar(client):
     try:
         health = client.health()
         st.sidebar.success("API available")
-        st.sidebar.write("Version: {}".format(display_value(health.get("version"))))
-        st.sidebar.write("Model: {}".format(display_value(health.get("model"))))
+        st.sidebar.write(
+            "Version: {}".format(display_value(health.get("version")))
+        )
+        st.sidebar.write(
+            "Model: {}".format(display_value(health.get("model")))
+        )
     except SafeHireAPIError as error:
         handle_api_error(error)
 
@@ -568,7 +790,13 @@ def render_sidebar(client):
             "Local": False,
             "Overseas": True,
         }[market_label],
+        "destination_country": (
+            None if country_label == "All" else country_label
+        ),
+        "date_from": date_from.isoformat() if date_from else None,
+        "date_to": date_to.isoformat() if date_to else None,
         "limit": limit,
+        "dates_invalid": dates_invalid,
     }
 
 
@@ -588,10 +816,22 @@ def render_statistics(client):
         return
 
     columns = st.columns(4)
-    columns[0].metric("Total cases", find_stat(stats, ["total", "total_cases", "cases"]))
-    columns[1].metric("Open cases", find_stat(stats, ["open", "open_cases"]))
-    columns[2].metric("High risk", find_stat(stats, ["high_risk", "high_risk_cases"]))
-    columns[3].metric("Resolved", find_stat(stats, ["resolved", "resolved_cases"]))
+    columns[0].metric(
+        "Total cases",
+        find_stat(stats, ["total", "total_cases", "cases"]),
+    )
+    columns[1].metric(
+        "Open cases",
+        find_stat(stats, ["open", "open_cases"]),
+    )
+    columns[2].metric(
+        "High risk",
+        find_stat(stats, ["high_risk", "high_risk_cases"]),
+    )
+    columns[3].metric(
+        "Resolved",
+        find_stat(stats, ["resolved", "resolved_cases"]),
+    )
 
 
 def render_case_card(case):
@@ -616,10 +856,16 @@ def render_case_card(case):
                 title=escape(title),
                 entity=escape(entity),
                 risk=risk_badge(case.get("risk_level")),
-                verification=verification_badge(case.get("verification_status")),
+                verification=verification_badge(
+                    case.get("verification_status")
+                ),
                 case_id=escape(case_id),
-                status=escape(format_review_status(case.get("review_status"))),
-                overseas=escape(format_boolean(case.get("is_overseas"))),
+                status=escape(
+                    format_review_status(case.get("review_status"))
+                ),
+                overseas=escape(
+                    format_boolean(case.get("is_overseas"))
+                ),
                 created=escape(format_datetime(case.get("created_at"))),
             ),
             unsafe_allow_html=True,
@@ -629,31 +875,44 @@ def render_case_card(case):
         if st.button(
             "Review",
             key="review_{}".format(case_id),
-            use_container_width=True,
+            width="stretch",
         ):
             st.session_state.selected_case_id = case_id
             st.rerun()
 
 
 def render_queue(client, filters):
-    st.subheader("Case queue")
+    if filters.pop("dates_invalid", False):
+        st.error("From date must be on or before To date.")
+        return
+
     try:
         cases = client.get_cases(**filters)
+    except ValueError as error:
+        st.error(str(error))
+        return
     except SafeHireAPIError as error:
         handle_api_error(error)
         return
 
+    render_filtered_queue_analytics(cases)
+    st.divider()
+    st.subheader("Filtered cases")
     st.caption(
         "{} case{} in the current view".format(
-            len(cases), "" if len(cases) == 1 else "s"
+            len(cases),
+            "" if len(cases) == 1 else "s",
         )
     )
+
     if not cases:
         st.markdown(
-            '<div class="empty-state"><h3>No cases found</h3><p>No referred cases match the selected filters.</p></div>',
+            '<div class="empty-state"><h3>No cases found</h3>'
+            '<p>No referred cases match the selected filters.</p></div>',
             unsafe_allow_html=True,
         )
         return
+
     for case in cases:
         render_case_card(case)
 
@@ -666,14 +925,20 @@ def show_detail(label, value):
 def render_decision_form(client, case):
     st.markdown("### Reviewer decision")
     case_id = case.get("case_id")
-    review_status = case.get("review_status")
-    review_outcome = case.get("review_outcome")
 
-    if review_status == "resolved" or review_outcome:
-        st.success("This case has been resolved. The recorded decision cannot be edited.")
-        show_detail("Recorded outcome", format_outcome(review_outcome))
+    if case.get("review_status") == "resolved" or case.get("review_outcome"):
+        st.success(
+            "This case has been resolved. The recorded decision cannot be edited."
+        )
+        show_detail(
+            "Recorded outcome",
+            format_outcome(case.get("review_outcome")),
+        )
         show_detail("Reviewer notes", case.get("review_notes"))
-        show_detail("Reviewed at", format_datetime(case.get("reviewed_at")))
+        show_detail(
+            "Reviewed at",
+            format_datetime(case.get("reviewed_at")),
+        )
         return
 
     reviewer = st.session_state.get("reviewer_profile") or {}
@@ -683,8 +948,13 @@ def render_decision_form(client, case):
     )
     outcomes = [item.value for item in ReviewOutcome]
 
-    with st.form("decision_form_{}".format(display_value(case_id, "unknown"))):
+    with st.form(
+        "decision_form_{}".format(display_value(case_id, "unknown"))
+    ):
         st.caption("Decision will be recorded as {}".format(reviewer_name))
+        st.caption(
+            "All submitted outcomes are final, including 'Needs more evidence'."
+        )
         outcome = st.selectbox(
             "Outcome",
             outcomes,
@@ -694,14 +964,18 @@ def render_decision_form(client, case):
         )
         notes = st.text_area(
             "Decision notes",
-            placeholder="Record the evidence considered and explain the decision.",
+            placeholder=(
+                "Record the evidence considered and explain the decision."
+            ),
             height=140,
         )
         confirmation = st.checkbox(
             "I confirm that this decision is final and cannot be edited."
         )
         submitted = st.form_submit_button(
-            "Submit decision", type="primary", use_container_width=True
+            "Submit decision",
+            type="primary",
+            width="stretch",
         )
 
     if not submitted:
@@ -721,7 +995,9 @@ def render_decision_form(client, case):
                 notes=notes,
                 reviewer=reviewer_name,
             )
-        st.session_state.decision_success_message = "The reviewer decision was recorded."
+        st.session_state.decision_success_message = (
+            "The reviewer decision was recorded."
+        )
         st.rerun()
     except SafeHireAPIError as error:
         handle_api_error(error)
@@ -747,7 +1023,10 @@ def render_case_detail(client, case_id):
     risk_column, verification_column = st.columns(2)
     with risk_column:
         st.markdown("**Risk assessment**")
-        st.markdown(risk_badge(case.get("risk_level")), unsafe_allow_html=True)
+        st.markdown(
+            risk_badge(case.get("risk_level")),
+            unsafe_allow_html=True,
+        )
     with verification_column:
         st.markdown("**Verification status**")
         st.markdown(
@@ -762,22 +1041,41 @@ def render_case_detail(client, case_id):
             st.markdown("### Case information")
             show_detail("Posting title", case.get("title"))
             show_detail("Entity", case.get("entity_name"))
-            show_detail("Review status", format_review_status(case.get("review_status")))
-            show_detail("Created", format_datetime(case.get("created_at")))
-            show_detail("Overseas posting", format_boolean(case.get("is_overseas")))
+            show_detail(
+                "Review status",
+                format_review_status(case.get("review_status")),
+            )
+            show_detail(
+                "Created",
+                format_datetime(case.get("created_at")),
+            )
+            show_detail(
+                "Overseas posting",
+                format_boolean(case.get("is_overseas")),
+            )
+
     with right:
         with st.container(border=True):
             st.markdown("### Posting details")
             show_detail("Location", case.get("location"))
-            show_detail("Destination country", case.get("destination_country"))
+            show_detail(
+                "Destination country",
+                case.get("destination_country"),
+            )
             show_detail("Salary", case.get("salary_text"))
             show_detail("Contact email", case.get("contact_email"))
-            show_detail("Model probability", format_probability(case.get("probability")))
+            show_detail(
+                "Model probability",
+                format_probability(case.get("probability")),
+            )
 
     st.markdown("### Posting description")
     st.text_area(
         "Description",
-        value=display_value(case.get("description"), "No posting description was provided."),
+        value=display_value(
+            case.get("description"),
+            "No posting description was provided.",
+        ),
         height=180,
         disabled=True,
         label_visibility="collapsed",

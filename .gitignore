@@ -35,7 +35,7 @@
 *.h5
 *.pt
 *.onnx
-models/
+/artifacts/
 mlruns/
 
 # Explicit model exceptions (placed AFTER *.pkl rule)

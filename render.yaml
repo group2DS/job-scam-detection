@@ -1,12 +1,11 @@
-# Render blueprint.
+# Render Blueprint for the Hakiki Hire API.
 #
-# Creates the API service and a Postgres instance, and wires the connection
-# string between them automatically.
+# This Blueprint creates the FastAPI web service and a Render Postgres
+# database, then injects the database connection string into the API.
 #
-# Postgres matters here rather than SQLite: Render's filesystem is ephemeral,
-# so a SQLite file would be wiped on every restart and every deploy, taking
-# the review cases with it. The government dashboard would show an empty
-# queue after any redeploy.
+# PostgreSQL is required for durable case and reviewer data because the
+# filesystem of a Render web service is not intended for persistent SQLite
+# storage.
 
 services:
   - type: web
@@ -14,19 +13,40 @@ services:
     runtime: python
     plan: free
     region: frankfurt
+
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn src.api.main:app --host 0.0.0.0 --port $PORT
+    startCommand: >-
+      uvicorn src.api.main:app
+      --host 0.0.0.0
+      --port $PORT
+
     healthCheckPath: /api/health
+
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.3"
+
       - key: DATABASE_URL
         fromDatabase:
           name: job-scam-db
           property: connectionString
-      # Set this in the dashboard once the frontend URL is known.
+
+      # Render generates this secret. The API has no insecure fallback.
+      - key: JWT_SECRET_KEY
+        generateValue: true
+
+      - key: JWT_ALGORITHM
+        value: HS256
+
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "60"
+
+      # Keep the job-seeker UI and local development origins here.
+      # After Streamlit deploys Hakiki Hire, append its exact streamlit.app
+      # origin to this comma-separated value and sync the Blueprint again.
       - key: CORS_ORIGINS
-        value: "https://job-scam-detection-five.vercel.app,http://localhost:5173"
+        value: >-
+          https://job-scam-detection-five.vercel.app,http://localhost:5173
 
 databases:
   - name: job-scam-db

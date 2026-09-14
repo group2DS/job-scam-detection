@@ -1,11 +1,10 @@
 # Render Blueprint for the Hakiki Hire API.
 #
-# This Blueprint creates the FastAPI web service and a Render Postgres
-# database, then injects the database connection string into the API.
+# Creates the FastAPI web service and a Render Postgres database, then wires
+# the database connection string into the API automatically.
 #
-# PostgreSQL is required for durable case and reviewer data because the
-# filesystem of a Render web service is not intended for persistent SQLite
-# storage.
+# PostgreSQL is used instead of SQLite because reviewer accounts, case records,
+# decisions, and audit history must persist across service restarts and deploys.
 
 services:
   - type: web
@@ -13,6 +12,7 @@ services:
     runtime: python
     plan: free
     region: frankfurt
+    branch: feature/dashboard
 
     buildCommand: pip install -r requirements.txt
     startCommand: >-
@@ -31,7 +31,7 @@ services:
           name: job-scam-db
           property: connectionString
 
-      # Render generates this secret. The API has no insecure fallback.
+      # Render generates a secure JWT signing secret for the API.
       - key: JWT_SECRET_KEY
         generateValue: true
 
@@ -41,9 +41,20 @@ services:
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "60"
 
+      # Used by scripts/seed_admin.py --non-interactive.
+      # Render requests these values securely during Blueprint creation.
+      - key: ADMIN_USERNAME
+        sync: false
+
+      - key: ADMIN_DISPLAY_NAME
+        sync: false
+
+      - key: ADMIN_PASSWORD
+        sync: false
+
       # Keep the job-seeker UI and local development origins here.
-      # After Streamlit deploys Hakiki Hire, append its exact streamlit.app
-      # origin to this comma-separated value and sync the Blueprint again.
+      # After deploying the Hakiki Hire Streamlit dashboard, append its exact
+      # streamlit.app origin to this comma-separated value.
       - key: CORS_ORIGINS
         value: >-
           https://job-scam-detection-five.vercel.app,http://localhost:5173

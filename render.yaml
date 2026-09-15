@@ -1,12 +1,10 @@
-# Render blueprint.
+# Render Blueprint for the Hakiki Hire API.
 #
-# Creates the API service and a Postgres instance, and wires the connection
-# string between them automatically.
+# Creates the FastAPI web service and a Render Postgres database, then wires
+# the database connection string into the API automatically.
 #
-# Postgres matters here rather than SQLite: Render's filesystem is ephemeral,
-# so a SQLite file would be wiped on every restart and every deploy, taking
-# the review cases with it. The government dashboard would show an empty
-# queue after any redeploy.
+# PostgreSQL is used instead of SQLite because reviewer accounts, case records,
+# decisions, and audit history must persist across service restarts and deploys.
 
 services:
   - type: web
@@ -14,19 +12,52 @@ services:
     runtime: python
     plan: free
     region: frankfurt
+    branch: feature/dashboard
+
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn src.api.main:app --host 0.0.0.0 --port $PORT
+    startCommand: >-
+      uvicorn src.api.main:app
+      --host 0.0.0.0
+      --port $PORT
+
     healthCheckPath: /api/health
+
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.3"
+
       - key: DATABASE_URL
         fromDatabase:
           name: job-scam-db
           property: connectionString
-      # Set this in the dashboard once the frontend URL is known.
+
+      # Render generates a secure JWT signing secret for the API.
+      - key: JWT_SECRET_KEY
+        generateValue: true
+
+      - key: JWT_ALGORITHM
+        value: HS256
+
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "60"
+
+      # Used by scripts/seed_admin.py --non-interactive.
+      # Render requests these values securely during Blueprint creation.
+      - key: ADMIN_USERNAME
+        sync: false
+
+      - key: ADMIN_DISPLAY_NAME
+        sync: false
+
+      - key: ADMIN_PASSWORD
+        sync: false
+
+      # Keep the job-seeker UI and local development origins here.
+      # After deploying the Hakiki Hire Streamlit dashboard, append its exact
+      # streamlit.app origin to this comma-separated value.
       - key: CORS_ORIGINS
-        value: "https://hakikihire.vercel.app,https://job-scam-detection-five.vercel.app,http://localhost:5173"
+        value: >-
+          https://hakikihire.vercel.app,https://job-scam-detection-five.vercel.app,http://localhost:5173
 
 databases:
   - name: job-scam-db

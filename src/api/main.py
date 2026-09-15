@@ -16,7 +16,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routes import analyse, cases
+from src.api.routes import analyse
+from src.api.routes import auth
+from src.api.routes import cases
 from src.core.config import get_settings
 from src.db.models import init_db
 from src.models import classifier
@@ -63,6 +65,7 @@ app.add_middleware(
 )
 
 app.include_router(analyse.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
 app.include_router(cases.router, prefix="/api")
 
 

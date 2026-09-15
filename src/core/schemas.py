@@ -12,8 +12,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
-
+from pydantic import BaseModel, ConfigDict, Field
 
 # --------------------------------------------------------------------------
 # Enumerations
@@ -230,3 +229,90 @@ class ReviewDecision(BaseModel):
     outcome: ReviewOutcome
     notes: Optional[str] = None
     reviewer: str = "demo_reviewer"
+
+# ---------------------------------------------------------------------------
+# Government dashboard authentication
+# ---------------------------------------------------------------------------
+
+
+class LoginRequest(BaseModel):
+    """Credentials submitted by a government dashboard reviewer."""
+
+    username: str
+    password: str
+
+
+class ReviewerProfile(BaseModel):
+    """Public reviewer information returned by the API."""
+
+    id: int
+    username: str
+    display_name: str
+    role: str
+    is_active: bool
+
+
+class LoginResponse(BaseModel):
+    """Successful reviewer login response."""
+
+    access_token: str
+    token_type: str = "bearer"
+    reviewer: ReviewerProfile
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class LoginRequest(BaseModel):
+    """Credentials submitted by a government dashboard user."""
+
+    username: str = Field(
+        min_length=3,
+        max_length=80,
+    )
+
+    password: str = Field(
+        min_length=8,
+        max_length=72,
+    )
+
+
+class TokenResponse(BaseModel):
+    """JWT returned after successful authentication."""
+
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    username: str
+    role: str
+
+
+class UserResponse(BaseModel):
+    """Public representation of an authenticated user."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
+
+    id: int
+    username: str
+    role: str
+    is_active: bool
+
+
+class CreateUserRequest(BaseModel):
+    """Payload used by an administrator to create a user."""
+
+    username: str = Field(
+        min_length=3,
+        max_length=80,
+    )
+
+    password: str = Field(
+        min_length=8,
+        max_length=72,
+    )
+
+    role: str = Field(
+        default="reviewer",
+        pattern="^(reviewer|admin)$",
+    )    

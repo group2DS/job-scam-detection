@@ -21,9 +21,13 @@ pytest>=8.0
 
 # Document upload
 python-multipart>=0.0.9
+bcrypt>=4.1
+PyJWT>=2.8
+
 pypdf>=4.2
 python-docx>=1.1
 
+reportlab>=5.0.1
 
 # Required by src/models/feature_builder
 pandas>=2.0

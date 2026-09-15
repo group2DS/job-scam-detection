@@ -1,0 +1,283 @@
+"""Unit tests for the Hakiki Hire government dashboard API client."""
+
+from __future__ import annotations
+
+from unittest.mock import Mock
+
+import pytest
+import requests
+
+from app.government.api_client import (
+    HakikiHireAPIClient,
+    HakikiHireAPIError,
+)
+
+
+def make_response(status_code=200, json_data=None, json_error=None):
+    response = Mock(spec=requests.Response)
+    response.status_code = status_code
+    response.ok = 200 <= status_code < 400
+    if json_error is not None:
+        response.json.side_effect = json_error
+    else:
+        response.json.return_value = json_data
+    return response
+
+
+def patch_request(monkeypatch, response=None, error=None):
+    request_mock = Mock()
+    if error is not None:
+        request_mock.side_effect = error
+    else:
+        request_mock.return_value = response
+    monkeypatch.setattr(requests.Session, "request", request_mock)
+    return request_mock
+
+
+def valid_profile(**overrides):
+    profile = {
+        "id": 1,
+        "username": "admin",
+        "display_name": "Hakiki Hire Administrator",
+        "role": "admin",
+        "is_active": True,
+    }
+    profile.update(overrides)
+    return profile
+
+
+def test_client_normalizes_base_url():
+    client = HakikiHireAPIClient(base_url="https://example.test/")
+    assert client.base_url == "https://example.test"
+
+
+def test_authenticated_request_adds_bearer_header(monkeypatch):
+    response = make_response(json_data={"status": "ok"})
+    request_mock = patch_request(monkeypatch, response=response)
+    client = HakikiHireAPIClient(access_token="secret-token")
+    client.health()
+    assert request_mock.call_args.kwargs["headers"]["Authorization"] == "Bearer secret-token"
+
+
+def test_logout_clears_access_token():
+    client = HakikiHireAPIClient(access_token="secret-token")
+    client.logout()
+    assert client.access_token is None
+
+
+def test_login_requires_username():
+    with pytest.raises(ValueError, match="Username is required"):
+        HakikiHireAPIClient().login("   ", "password")
+
+
+def test_login_requires_password():
+    with pytest.raises(ValueError, match="Password is required"):
+        HakikiHireAPIClient().login("admin", "")
+
+
+def test_login_sends_credentials_and_stores_token(monkeypatch):
+    response = make_response(json_data={
+        "access_token": "token",
+        "token_type": "bearer",
+        "reviewer": valid_profile(),
+    })
+    request_mock = patch_request(monkeypatch, response=response)
+    client = HakikiHireAPIClient()
+    result = client.login(" admin ", "password")
+    assert client.access_token == "token"
+    assert result["reviewer"]["display_name"] == "Hakiki Hire Administrator"
+    assert request_mock.call_args.kwargs["json"] == {
+        "username": "admin",
+        "password": "password",
+    }
+
+
+def test_login_requires_access_token_in_response(monkeypatch):
+    patch_request(monkeypatch, response=make_response(json_data={"reviewer": valid_profile()}))
+    with pytest.raises(HakikiHireAPIError, match="access token"):
+        HakikiHireAPIClient().login("admin", "password")
+
+
+def test_login_requires_reviewer_profile_in_response(monkeypatch):
+    patch_request(monkeypatch, response=make_response(json_data={"access_token": "token"}))
+    with pytest.raises(HakikiHireAPIError, match="reviewer profile"):
+        HakikiHireAPIClient().login("admin", "password")
+
+
+def test_login_401_uses_backend_detail(monkeypatch):
+    patch_request(monkeypatch, response=make_response(
+        status_code=401,
+        json_data={"detail": "Invalid username or password."},
+    ))
+    with pytest.raises(HakikiHireAPIError, match="Invalid username or password"):
+        HakikiHireAPIClient().login("admin", "wrong-password")
+
+
+def test_connection_error_uses_hakiki_hire_message(monkeypatch):
+    patch_request(monkeypatch, error=requests.ConnectionError())
+    with pytest.raises(HakikiHireAPIError, match="Hakiki Hire API could not be reached"):
+        HakikiHireAPIClient().health()
+
+
+def test_timeout_uses_readable_message(monkeypatch):
+    patch_request(monkeypatch, error=requests.Timeout())
+    with pytest.raises(HakikiHireAPIError, match="too long"):
+        HakikiHireAPIClient().health()
+
+
+def test_invalid_json_response_is_rejected(monkeypatch):
+    patch_request(monkeypatch, response=make_response(status_code=200, json_error=ValueError()))
+    with pytest.raises(HakikiHireAPIError, match="invalid JSON response"):
+        HakikiHireAPIClient().health()
+
+
+def test_get_current_user_returns_profile(monkeypatch):
+    patch_request(monkeypatch, response=make_response(json_data=valid_profile()))
+    assert HakikiHireAPIClient().get_current_user()["role"] == "admin"
+
+
+def test_get_users_returns_list(monkeypatch):
+    request_mock = patch_request(monkeypatch, response=make_response(json_data=[valid_profile()]))
+    users = HakikiHireAPIClient().get_users()
+    assert users[0]["username"] == "admin"
+    assert request_mock.call_args.kwargs["url"].endswith("/api/auth/users")
+
+
+def test_get_users_rejects_non_list(monkeypatch):
+    patch_request(monkeypatch, response=make_response(json_data={}))
+    with pytest.raises(HakikiHireAPIError, match="JSON list"):
+        HakikiHireAPIClient().get_users()
+
+
+def test_create_reviewer_sends_normalized_payload(monkeypatch):
+    response = make_response(json_data=valid_profile(
+        id=2,
+        username="reviewer-one",
+        display_name="Reviewer One",
+        role="reviewer",
+    ))
+    request_mock = patch_request(monkeypatch, response=response)
+    result = HakikiHireAPIClient().create_reviewer(
+        " Reviewer-One ", "ReviewerPassword123!", " Reviewer One ", "reviewer", True
+    )
+    assert result["username"] == "reviewer-one"
+    assert request_mock.call_args.kwargs["json"] == {
+        "username": "reviewer-one",
+        "password": "ReviewerPassword123!",
+        "display_name": "Reviewer One",
+        "role": "reviewer",
+        "is_active": True,
+    }
+
+
+def test_create_reviewer_rejects_short_password():
+    with pytest.raises(ValueError, match="at least 10 characters"):
+        HakikiHireAPIClient().create_reviewer("reviewer-one", "short", "Reviewer One")
+
+
+def test_update_user_status_calls_expected_endpoint(monkeypatch):
+    request_mock = patch_request(monkeypatch, response=make_response(
+        json_data=valid_profile(id=2, is_active=False)
+    ))
+    HakikiHireAPIClient().update_user_status(2, False)
+    assert request_mock.call_args.kwargs["method"] == "PATCH"
+    assert request_mock.call_args.kwargs["url"].endswith("/api/auth/users/2/status")
+    assert request_mock.call_args.kwargs["json"] == {"is_active": False}
+
+
+def test_update_user_role_calls_expected_endpoint(monkeypatch):
+    request_mock = patch_request(monkeypatch, response=make_response(
+        json_data=valid_profile(id=2, role="admin")
+    ))
+    HakikiHireAPIClient().update_user_role(2, "admin")
+    assert request_mock.call_args.kwargs["method"] == "PATCH"
+    assert request_mock.call_args.kwargs["url"].endswith("/api/auth/users/2/role")
+    assert request_mock.call_args.kwargs["json"] == {"role": "admin"}
+
+
+def test_update_user_role_rejects_unsupported_role():
+    with pytest.raises(ValueError, match="admin or reviewer"):
+        HakikiHireAPIClient().update_user_role(2, "superuser")
+
+
+def test_get_destination_countries_returns_list(monkeypatch):
+    patch_request(monkeypatch, response=make_response(json_data=["Canada", "Germany"]))
+    assert HakikiHireAPIClient().get_destination_countries() == ["Canada", "Germany"]
+
+
+def test_get_cases_sends_all_filters(monkeypatch):
+    request_mock = patch_request(monkeypatch, response=make_response(json_data=[]))
+    HakikiHireAPIClient().get_cases(
+        risk_level="high_risk",
+        verification_status="blacklisted",
+        review_status="open",
+        is_overseas=True,
+        destination_country="Canada",
+        date_from="2026-09-01",
+        date_to="2026-09-14",
+        limit=100,
+    )
+    assert request_mock.call_args.kwargs["params"] == {
+        "limit": 100,
+        "risk_level": "high_risk",
+        "verification_status": "blacklisted",
+        "review_status": "open",
+        "destination_country": "Canada",
+        "date_from": "2026-09-01",
+        "date_to": "2026-09-14",
+        "is_overseas": True,
+    }
+
+
+def test_get_cases_rejects_invalid_limit():
+    with pytest.raises(ValueError, match="between 1 and 200"):
+        HakikiHireAPIClient().get_cases(limit=201)
+
+
+def test_get_cases_rejects_reverse_date_range():
+    with pytest.raises(ValueError, match="on or before"):
+        HakikiHireAPIClient().get_cases(date_from="2026-09-14", date_to="2026-09-01")
+
+
+def test_get_cases_rejects_non_list(monkeypatch):
+    patch_request(monkeypatch, response=make_response(json_data={}))
+    with pytest.raises(HakikiHireAPIError, match="JSON list"):
+        HakikiHireAPIClient().get_cases()
+
+
+def test_get_stats_returns_object(monkeypatch):
+    patch_request(monkeypatch, response=make_response(json_data={"total": 3}))
+    assert HakikiHireAPIClient().get_stats() == {"total": 3}
+
+
+def test_get_case_returns_object(monkeypatch):
+    patch_request(monkeypatch, response=make_response(json_data={"case_id": "C-TEST01"}))
+    assert HakikiHireAPIClient().get_case("C-TEST01")["case_id"] == "C-TEST01"
+
+
+def test_submit_decision_omits_blank_reviewer(monkeypatch):
+    request_mock = patch_request(monkeypatch, response=make_response(
+        json_data={"review_status": "resolved"}
+    ))
+    HakikiHireAPIClient().submit_decision(
+        "C-TEST01", "confirmed_scam", "Evidence reviewed.", "   "
+    )
+    assert request_mock.call_args.kwargs["json"] == {
+        "outcome": "confirmed_scam",
+        "notes": "Evidence reviewed.",
+    }
+
+
+def test_submit_decision_includes_reviewer(monkeypatch):
+    request_mock = patch_request(monkeypatch, response=make_response(
+        json_data={"review_status": "resolved"}
+    ))
+    HakikiHireAPIClient().submit_decision(
+        "C-TEST01",
+        "confirmed_scam",
+        "Evidence reviewed.",
+        " Hakiki Hire Administrator ",
+    )
+    assert request_mock.call_args.kwargs["json"]["reviewer"] == (
+        "Hakiki Hire Administrator"
+    )

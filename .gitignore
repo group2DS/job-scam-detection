@@ -104,3 +104,8 @@ Thumbs.db
 
 *.log
 logs/
+.env
+*.db
+__pycache__/
+.pytest_cache/
+*.pyc

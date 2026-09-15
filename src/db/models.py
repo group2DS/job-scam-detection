@@ -20,6 +20,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Integer,
     String,
     Text,
     create_engine,
@@ -45,6 +46,51 @@ def _new_case_id() -> str:
 
 class Base(DeclarativeBase):
     pass
+
+class User(Base):
+    """An authenticated government dashboard user."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    username: Mapped[str] = mapped_column(
+        String(80),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+
+    password_hash: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    display_name: Mapped[str] = mapped_column(
+        String(120),
+        nullable=False,
+    )
+
+    role: Mapped[str] = mapped_column(
+        String(30),
+        default="reviewer",
+        nullable=False,
+    )
+
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_now,
+        nullable=False,
+    )
 
 
 class ReviewCase(Base):

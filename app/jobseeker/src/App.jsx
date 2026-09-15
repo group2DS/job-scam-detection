@@ -37,7 +37,7 @@ export default function App() {
       <header className="header">
         <div className="brand">
           <Logo />
-          <span className="brand__name">Job Scam Check</span>
+          <span className="brand__name">Hakiki Hire</span>
         </div>
 
         <h1 className="header__title">

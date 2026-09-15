@@ -237,7 +237,7 @@ export default function SubmitForm({ onSubmit, onSubmitFile, loading }) {
       </button>
 
       <p className="microcopy">
-        No account needed. Your submission is not stored.
+        No account needed. Listings referred for review are shared with reviewers.
       </p>
     </form>
   );

@@ -9,6 +9,11 @@ The model does not see registry data, does not know about blacklists, and
 does not assign a risk tier. Those belong to later stages. Keeping the
 boundary here means modelling can iterate freely without touching the API,
 and the API can be built before the model exists.
+
+The trained artefact is a single sklearn Pipeline that accepts raw text and
+performs its own vectorising and feature construction internally. An earlier
+revision exported a separate vectoriser; that file is still loaded if present
+so older artefacts keep working, but it is no longer required.
 """
 
 from __future__ import annotations
@@ -41,20 +46,42 @@ def _load() -> None:
     _loaded = True
 
     settings = get_settings()
-    if not (settings.model_path.exists() and settings.vectorizer_path.exists()):
+
+    if not settings.model_path.exists():
         log.warning(
-            "Model artefacts not found at %s. Using stub classifier.",
-            settings.model_path.parent,
+            "Model artefact not found at %s. Using stub classifier.",
+            settings.model_path,
         )
         return
 
     try:
         import joblib
 
+        # Importing the transformer registers it under its real module path.
+        # joblib stores a class by import path rather than by value, so the
+        # pipeline cannot be reconstructed unless this module is importable.
+        try:
+            from src.models import feature_builder  # noqa: F401
+        except ImportError:
+            log.debug("feature_builder not present; artefact may not need it.")
+
         _model = joblib.load(settings.model_path)
-        _vectorizer = joblib.load(settings.vectorizer_path)
+
+        # Legacy two-file artefacts kept a vectoriser alongside the estimator.
+        # A pipeline holds its own, so this is only loaded when it exists and
+        # is not empty.
+        if (
+            settings.vectorizer_path.exists()
+            and settings.vectorizer_path.stat().st_size > 0
+        ):
+            _vectorizer = joblib.load(settings.vectorizer_path)
+
         _version = getattr(_model, "version_", "trained-0.1")
-        log.info("Loaded classifier %s", _version)
+        log.info(
+            "Loaded classifier %s (%s)",
+            _version,
+            "pipeline" if _vectorizer is None else "estimator + vectoriser",
+        )
     except Exception:
         log.exception("Failed to load model artefacts. Falling back to stub.")
         _model = None
@@ -109,15 +136,18 @@ def predict(text: str) -> ModelResult:
     """Return the probability that this posting is fraudulent."""
     _load()
 
-    if _model is None or _vectorizer is None:
+    if _model is None:
         return ModelResult(
             probability=_stub_probability(text),
             model_version=_version,
             is_stub=True,
         )
 
-    features = _vectorizer.transform([text])
+    # A pipeline takes raw text. A legacy estimator needs the vectoriser
+    # applied first.
+    features = [text] if _vectorizer is None else _vectorizer.transform([text])
     probability = float(_model.predict_proba(features)[0][1])
+
     return ModelResult(
         probability=round(probability, 4),
         model_version=_version,

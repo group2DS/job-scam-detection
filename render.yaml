@@ -57,7 +57,7 @@ services:
       # streamlit.app origin to this comma-separated value.
       - key: CORS_ORIGINS
         value: >-
-          https://job-scam-detection-five.vercel.app,http://localhost:5173
+          https://hakikihire.vercel.app,https://job-scam-detection-five.vercel.app,http://localhost:5173
 
 databases:
   - name: job-scam-db

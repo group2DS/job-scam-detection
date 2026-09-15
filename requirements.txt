@@ -38,3 +38,6 @@ streamlit>=1.38
 
 # Government dashboard HTTP client
 requests>=2.31
+
+# Starlette/FastAPI test client
+httpx2==2.13.0

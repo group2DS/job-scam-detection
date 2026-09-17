@@ -557,17 +557,145 @@ def render_overview(cases: List[Dict[str, Any]]) -> None:
 
 
 def render_queue(cases: List[Dict[str, Any]], dates_invalid: bool) -> None:
-    st.header("Review queue")
+    """Render the filtered government queue with an explicit refresh control."""
+    heading_column, refresh_column = st.columns([5, 1])
+
+    with heading_column:
+        st.header("Review queue")
+        st.caption(
+            "Review suspicious and high-risk referrals using the current filters."
+        )
+
+    with refresh_column:
+        st.write("")
+        if st.button(
+            "Refresh queue",
+            key="refresh_review_queue",
+            type="secondary",
+            width="stretch",
+        ):
+            st.rerun()
+
     if dates_invalid:
         st.error("From date must be on or before To date.")
         return
-    st.caption("{} case{} in the current view".format(len(cases), "" if len(cases) == 1 else "s"))
-    if not cases:
-        st.markdown('<div class="empty-state"><h3>No cases found</h3><p>No cases match these filters.</p></div>', unsafe_allow_html=True)
-        return
-    for case in cases:
-        render_case_card(case)
 
+    render_summary(cases)
+
+    st.caption(
+        "{} case{} in the current filtered view".format(
+            len(cases),
+            "" if len(cases) == 1 else "s",
+        )
+    )
+
+    if not cases:
+        st.markdown(
+            '<div class="empty-state">'
+            '<h3>No cases found</h3>'
+            '<p>No cases match the selected filters.</p>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    risk_order = {
+        "high_risk": 0,
+        "suspicious": 1,
+        "lower_risk": 2,
+    }
+
+    newest_first = sorted(
+        cases,
+        key=lambda case: str(case.get("created_at") or ""),
+        reverse=True,
+    )
+    sorted_cases = sorted(
+        newest_first,
+        key=lambda case: risk_order.get(case.get("risk_level"), 99),
+    )
+
+    page_size = 25
+    page_count = max(1, (len(sorted_cases) + page_size - 1) // page_size)
+
+    if "queue_page" not in st.session_state:
+        st.session_state.queue_page = 1
+
+    st.session_state.queue_page = min(
+        max(1, int(st.session_state.queue_page)),
+        page_count,
+    )
+
+    if page_count > 1:
+        previous_column, page_column, next_column = st.columns([1, 3, 1])
+        with previous_column:
+            if st.button(
+                "Previous",
+                disabled=st.session_state.queue_page <= 1,
+                width="stretch",
+            ):
+                st.session_state.queue_page -= 1
+                st.rerun()
+        with page_column:
+            st.markdown(
+                "<div style='text-align:center;padding:.55rem;'>"
+                "Page {} of {}"
+                "</div>".format(st.session_state.queue_page, page_count),
+                unsafe_allow_html=True,
+            )
+        with next_column:
+            if st.button(
+                "Next",
+                disabled=st.session_state.queue_page >= page_count,
+                width="stretch",
+            ):
+                st.session_state.queue_page += 1
+                st.rerun()
+
+    start = (st.session_state.queue_page - 1) * page_size
+    visible_cases = sorted_cases[start:start + page_size]
+
+    header = st.columns([1.1, 2.1, 1.8, 1.15, 1.5, 1.0, 1.15, 0.8])
+    for column, label in zip(
+        header,
+        [
+            "Case ID",
+            "Title",
+            "Entity",
+            "Risk",
+            "Verification",
+            "Market",
+            "Received",
+            "",
+        ],
+    ):
+        column.markdown("**{}**".format(label))
+
+    st.divider()
+
+    for index, case in enumerate(visible_cases):
+        case_id = display_value(case.get("case_id"), "Unknown case")
+        row = st.columns([1.1, 2.1, 1.8, 1.15, 1.5, 1.0, 1.15, 0.8])
+        row[0].write(case_id)
+        row[1].write(display_value(case.get("title"), "Not provided"))
+        row[2].write(display_value(case.get("entity_name"), "Not provided"))
+        row[3].markdown(risk_badge(case.get("risk_level")), unsafe_allow_html=True)
+        row[4].markdown(
+            verification_badge(case.get("verification_status")),
+            unsafe_allow_html=True,
+        )
+        row[5].write("Overseas" if case.get("is_overseas") else "Local")
+        row[6].write(format_datetime(case.get("created_at")))
+
+        if row[7].button(
+            "Review",
+            key="queue_review_{}_{}".format(case_id, start + index),
+            width="stretch",
+        ):
+            st.session_state.selected_case_id = case_id
+            st.rerun()
+
+        st.divider()
 
 def show_detail(label: str, value: Any) -> None:
     st.markdown("**{}**".format(escape(label)))

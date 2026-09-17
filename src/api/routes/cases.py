@@ -27,6 +27,13 @@ def list_cases(
         default=None,
         description="lower_risk|suspicious|high_risk",
     ),
+    verification_status: str | None = Query(
+        default=None,
+        description=(
+            "verified|unverified|blacklisted|possible_impersonation|"
+            "not_applicable"
+        ),
+    ),
     review_status: str | None = Query(
         default=None,
         description="open|resolved",
@@ -64,6 +71,11 @@ def list_cases(
     if risk_level:
         statement = statement.where(
             ReviewCase.risk_level == risk_level
+        )
+
+    if verification_status:
+        statement = statement.where(
+            ReviewCase.verification_status == verification_status
         )
 
     if review_status:
@@ -114,6 +126,8 @@ def list_cases(
             is_overseas=case.is_overseas,
             created_at=case.created_at,
             review_status=case.review_status,
+            destination_country=case.destination_country,
+            review_outcome=case.review_outcome,
         )
         for case in cases
     ]
@@ -124,7 +138,7 @@ def case_stats(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    """Return summary counts for the dashboard header."""
+    """Return unfiltered whole-database summary counts."""
     del current_user
 
     total = (

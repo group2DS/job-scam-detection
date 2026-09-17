@@ -1,9 +1,8 @@
-"""
-Shared data contracts.
+"""Shared data contracts.
 
 Every stage of the pipeline speaks in these objects. If you are adding a
 field, add it here first, then update the stage that populates it. Do not
-pass loose dicts between stages.
+pass loose dictionaries between stages.
 """
 
 from __future__ import annotations
@@ -13,6 +12,7 @@ from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+
 
 # --------------------------------------------------------------------------
 # Enumerations
@@ -31,10 +31,11 @@ class RiskLevel(str, Enum):
 
 
 class VerificationStatus(str, Enum):
-    """Entity verification, derived from registry and blacklist lookups.
+    """Entity verification from registry and blacklist lookups.
 
-    Deliberately independent of RiskLevel. A posting can read cleanly and
-    still be unverified, and a registered entity can still publish a scam.
+    Verification is deliberately independent of RiskLevel. A posting can
+    read cleanly and still be unverified, and a registered entity can still
+    publish a scam.
     """
 
     VERIFIED = "verified"
@@ -45,7 +46,7 @@ class VerificationStatus(str, Enum):
 
 
 class EntityType(str, Enum):
-    """Which registry applies to this posting.
+    """Identify which registry applies to a posting.
 
     A direct employer advertising its own vacancy is not a recruitment agency
     and must not be penalised for being absent from an agency register.
@@ -57,11 +58,7 @@ class EntityType(str, Enum):
 
 
 class ReviewOutcome(str, Enum):
-    """How a government reviewer resolved a case.
-
-    Five outcomes rather than two, because real cases are not cleanly
-    legitimate or fraudulent and forcing a binary produces bad labels.
-    """
+    """Describe how a government reviewer resolved a case."""
 
     CONFIRMED_LEGITIMATE = "confirmed_legitimate"
     CONFIRMED_SCAM = "confirmed_scam"
@@ -76,20 +73,21 @@ class ReviewOutcome(str, Enum):
 
 
 class AnalyseRequest(BaseModel):
-    """Inbound payload. Exactly one of url or text must be supplied."""
+    """Inbound payload. At least one of URL or text must be supplied."""
 
     url: Optional[str] = None
     text: Optional[str] = None
 
     def has_input(self) -> bool:
+        """Return whether the request contains a non-empty URL or text."""
         return bool((self.url or "").strip() or (self.text or "").strip())
 
 
 class Posting(BaseModel):
-    """Normalised posting. Every downstream stage reads this, never raw input.
+    """Normalised posting consumed by downstream pipeline stages.
 
-    Missing fields stay None rather than being imputed. Absence is itself a
-    signal: company is null for roughly two thirds of known fraudulent ads.
+    Missing fields remain None rather than being imputed. Absence can itself
+    be a useful signal during analysis.
     """
 
     title: Optional[str] = None
@@ -110,19 +108,19 @@ class Posting(BaseModel):
     raw_text: str = ""
 
     def entity_name(self) -> Optional[str]:
-        """The name to look up, preferring the agency when both are present."""
+        """Return the lookup name, preferring an agency when both exist."""
         return self.agency_name or self.employer_name
 
     def model_text(self) -> str:
-        """Concatenated text handed to the classifier.
-
-        Mirrors how the training corpus was assembled: title, description and
-        requirements joined with a single space. If this drifts from the
-        training construction the vectoriser sees a different distribution at
-        inference time, and nothing will raise an error.
-        """
+        """Return text assembled in the same order as the training corpus."""
         return " ".join(
-            p for p in [self.title, self.description, self.requirements] if p
+            part
+            for part in [
+                self.title,
+                self.description,
+                self.requirements,
+            ]
+            if part
         ).strip()
 
 
@@ -141,10 +139,7 @@ class RuleHit(BaseModel):
 
 
 class ModelResult(BaseModel):
-    """Classifier output. A probability and nothing else.
-
-    The model does not see registry data and does not assign a tier.
-    """
+    """Classifier probability output."""
 
     probability: float = Field(ge=0.0, le=1.0)
     model_version: str
@@ -164,19 +159,15 @@ class VerificationResult(BaseModel):
 
 
 class Reason(BaseModel):
-    """A single human readable explanation line.
-
-    Reasons are the product. A bare score tells a job seeker nothing they
-    can act on; naming the fee request lets them recognise the pattern again.
-    """
+    """A human-readable explanation produced by a pipeline stage."""
 
     code: str
     text: str
-    source: str  # model | rule | registry
+    source: str
 
 
 class AnalyseResponse(BaseModel):
-    """What the job seeker UI renders."""
+    """Analysis information rendered by the job-seeker interface."""
 
     risk_level: RiskLevel
     verification_status: VerificationStatus
@@ -195,7 +186,11 @@ class AnalyseResponse(BaseModel):
 
 
 class CaseSummary(BaseModel):
-    """One row in the review queue."""
+    """One row in the government review queue.
+
+    Destination and outcome are exposed here so Overview, Review queue, and
+    Reports can derive consistent values from the same filtered case response.
+    """
 
     case_id: str
     entity_name: Optional[str]
@@ -205,6 +200,8 @@ class CaseSummary(BaseModel):
     is_overseas: bool
     created_at: datetime
     review_status: str
+    destination_country: Optional[str] = None
+    review_outcome: Optional[ReviewOutcome] = None
 
 
 class CaseDetail(CaseSummary):
@@ -212,54 +209,26 @@ class CaseDetail(CaseSummary):
 
     description: Optional[str]
     location: Optional[str]
-    destination_country: Optional[str]
     salary_text: Optional[str]
     contact_email: Optional[str]
     probability: float
     reasons: list[Reason]
-    review_outcome: Optional[ReviewOutcome] = None
     review_notes: Optional[str] = None
     reviewed_at: Optional[datetime] = None
-    audit_trail: list[str] = []
+    audit_trail: list[str] = Field(default_factory=list)
 
 
 class ReviewDecision(BaseModel):
-    """Reviewer submission. Immutable once written."""
+    """Reviewer submission. A persisted decision is immutable."""
 
     outcome: ReviewOutcome
     notes: Optional[str] = None
     reviewer: str = "demo_reviewer"
 
-# ---------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------
 # Government dashboard authentication
-# ---------------------------------------------------------------------------
-
-
-class LoginRequest(BaseModel):
-    """Credentials submitted by a government dashboard reviewer."""
-
-    username: str
-    password: str
-
-
-class ReviewerProfile(BaseModel):
-    """Public reviewer information returned by the API."""
-
-    id: int
-    username: str
-    display_name: str
-    role: str
-    is_active: bool
-
-
-class LoginResponse(BaseModel):
-    """Successful reviewer login response."""
-
-    access_token: str
-    token_type: str = "bearer"
-    reviewer: ReviewerProfile
-
-from pydantic import BaseModel, ConfigDict, Field
+# --------------------------------------------------------------------------
 
 
 class LoginRequest(BaseModel):
@@ -269,15 +238,34 @@ class LoginRequest(BaseModel):
         min_length=3,
         max_length=80,
     )
-
     password: str = Field(
         min_length=8,
         max_length=72,
     )
 
 
+class ReviewerProfile(BaseModel):
+    """Public reviewer information returned by the API."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str
+    display_name: str
+    role: str
+    is_active: bool
+
+
+class LoginResponse(BaseModel):
+    """Successful reviewer login response used by the dashboard."""
+
+    access_token: str
+    token_type: str = "bearer"
+    reviewer: ReviewerProfile
+
+
 class TokenResponse(BaseModel):
-    """JWT returned after successful authentication."""
+    """JWT response retained for authentication-client compatibility."""
 
     access_token: str
     token_type: str = "bearer"
@@ -289,9 +277,7 @@ class TokenResponse(BaseModel):
 class UserResponse(BaseModel):
     """Public representation of an authenticated user."""
 
-    model_config = ConfigDict(
-        from_attributes=True,
-    )
+    model_config = ConfigDict(from_attributes=True)
 
     id: int
     username: str
@@ -306,13 +292,11 @@ class CreateUserRequest(BaseModel):
         min_length=3,
         max_length=80,
     )
-
     password: str = Field(
         min_length=8,
         max_length=72,
     )
-
     role: str = Field(
         default="reviewer",
         pattern="^(reviewer|admin)$",
-    )    
+    )

@@ -324,24 +324,71 @@ def render_overview_analytics(cases: Iterable[Dict[str, Any]]) -> None:
         _resolution_progress(frame)
 
 
-def _report_metrics(frame: pd.DataFrame) -> Dict[str, Any]:
+def _report_metrics(
+    frame: pd.DataFrame,
+) -> Dict[str, Any]:
+    """Return complete decision KPIs for the reporting scope."""
+
     total = len(frame)
-    resolved = int((frame["status"] == "Resolved").sum())
+    resolved_mask = frame["status"] == "Resolved"
+    resolved = int(resolved_mask.sum())
+
+    confirmed_legitimate = int(
+        (
+            frame["outcome"]
+            == "Confirmed legitimate"
+        ).sum()
+    )
+    confirmed_scams = int(
+        (
+            frame["outcome"]
+            == "Confirmed scam"
+        ).sum()
+    )
+    needs_more_evidence = int(
+        (
+            frame["outcome"]
+            == "Needs more evidence"
+        ).sum()
+    )
+    duplicates = int(
+        (
+            frame["outcome"]
+            == "Duplicate report"
+        ).sum()
+    )
+
+    recognized = (
+        confirmed_legitimate
+        + confirmed_scams
+        + needs_more_evidence
+        + duplicates
+    )
+
+    other_resolutions = max(
+        0,
+        resolved - recognized,
+    )
+
     return {
         "Total analysed": total,
-        "Confirmed legitimate": int((frame["outcome"] == "Confirmed legitimate").sum()),
-        "Confirmed scams": int((frame["outcome"] == "Confirmed scam").sum()),
-        "Needs more evidence": int((frame["outcome"] == "Needs more evidence").sum()),
-        "Duplicate reports": int((frame["outcome"] == "Duplicate report").sum()),
-        "Resolution rate": "{:.1f}%".format((resolved / total * 100) if total else 0),
+        "Confirmed legitimate": confirmed_legitimate,
+        "Confirmed scams": confirmed_scams,
+        "Needs more evidence": needs_more_evidence,
+        "Duplicate reports": duplicates,
+        "Other resolutions": other_resolutions,
+        "Resolution rate": "{:.1f}%".format(
+            (resolved / total * 100)
+            if total
+            else 0
+        ),
     }
-
 
 def render_report_summary(cases: Iterable[Dict[str, Any]]) -> None:
     """Render outcome-focused KPIs for the Reports page."""
     frame = cases_dataframe(cases)
     metrics = _report_metrics(frame)
-    columns = st.columns(6)
+    columns = st.columns(7)
     for column, (label, value) in zip(columns, metrics.items()):
         column.metric(label, value)
 

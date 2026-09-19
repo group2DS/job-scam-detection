@@ -217,7 +217,7 @@ def verify(posting: Posting) -> VerificationResult:
     # No named entity at all. Not an accusation, but nothing to verify either.
     if not name:
         return VerificationResult(
-            status=VerificationStatus.UNVERIFIED,
+            status=VerificationStatus.NOT_APPLICABLE,
             entity_type=entity_type,
             entity_name=None,
         )

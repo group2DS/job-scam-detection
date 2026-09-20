@@ -59,6 +59,28 @@ services:
         value: >-
           https://hakikihire.vercel.app,https://job-scam-detection-five.vercel.app,http://localhost:5173
 
+  - type: web
+    name: hakiki-hire-dashboard
+    runtime: python
+    plan: free
+    region: frankfurt
+    branch: feature/dashboard
+
+    buildCommand: pip install -r requirements.txt
+
+    startCommand: >-
+      streamlit run app/government/app.py
+      --server.address 0.0.0.0
+      --server.port $PORT
+      --server.headless true
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.3"
+
+      - key: HAKIKI_HIRE_API_BASE_URL
+        value: https://job-scam-api-vbc3.onrender.com
+
 databases:
   - name: job-scam-db
     plan: free

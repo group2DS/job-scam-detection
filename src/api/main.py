@@ -19,10 +19,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.api.routes import analyse
 from src.api.routes import auth
 from src.api.routes import cases
+from src.api.routes import registry_management
 from src.core.config import get_settings
-from src.db.models import init_db
+from src.db.models import SessionLocal, init_db
 from src.models import classifier
 from src.verification import registry
+from src.verification.registry_store import seed_registry_if_empty
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,7 +37,22 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    registry.load()
+
+    with SessionLocal() as session:
+        seeded = seed_registry_if_empty(session)
+        loaded = registry.reload_from_database(session)
+
+    if seeded:
+        log.info(
+            "Seeded %d registry records from CSV reference data.",
+            seeded,
+        )
+
+    log.info(
+        "Loaded %d active persistent registry records.",
+        loaded,
+    )
+
     if classifier.is_stub():
         log.warning(
             "Running with the STUB classifier. Results are for pipeline "
@@ -67,6 +84,7 @@ app.add_middleware(
 app.include_router(analyse.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(cases.router, prefix="/api")
+app.include_router(registry_management.router, prefix="/api")
 
 
 @app.get("/api/health", tags=["health"])

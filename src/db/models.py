@@ -167,6 +167,161 @@ class AuditEntry(Base):
     case: Mapped[ReviewCase] = relationship(back_populates="audit_entries")
 
 
+class RegistryRecord(Base):
+    """A persistent company, agency, or blacklist registry record."""
+
+    __tablename__ = "registry_records"
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    category: Mapped[str] = mapped_column(
+        String(20),
+        index=True,
+        nullable=False,
+    )
+
+    external_id: Mapped[str | None] = mapped_column(
+        String(80),
+        index=True,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(300),
+        index=True,
+        nullable=False,
+    )
+
+    normalised_name: Mapped[str] = mapped_column(
+        String(300),
+        index=True,
+        nullable=False,
+    )
+
+    registration_number: Mapped[str | None] = mapped_column(
+        String(120),
+    )
+
+    licence_number: Mapped[str | None] = mapped_column(
+        String(120),
+    )
+
+    licence_status: Mapped[str | None] = mapped_column(
+        String(40),
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(40),
+        default="active",
+        index=True,
+        nullable=False,
+    )
+
+    authorised_destinations: Mapped[str | None] = mapped_column(
+        Text,
+    )
+
+    county: Mapped[str | None] = mapped_column(
+        String(120),
+    )
+
+    blacklist_kind: Mapped[str | None] = mapped_column(
+        String(30),
+    )
+
+    blacklist_reason: Mapped[str | None] = mapped_column(
+        Text,
+    )
+
+    record_is_mock: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )
+
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        index=True,
+        nullable=False,
+    )
+
+    created_by: Mapped[str] = mapped_column(
+        String(80),
+        default="system",
+        nullable=False,
+    )
+
+    updated_by: Mapped[str] = mapped_column(
+        String(80),
+        default="system",
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_now,
+        nullable=False,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_now,
+        onupdate=_now,
+        nullable=False,
+    )
+
+
+class RegistryAuditEntry(Base):
+    """An append-only audit record for registry administration."""
+
+    __tablename__ = "registry_audit_entries"
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    registry_record_id: Mapped[int | None] = mapped_column(
+        ForeignKey("registry_records.id"),
+        index=True,
+    )
+
+    actor: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+    )
+
+    action: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+    )
+
+    record_category: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+
+    record_name: Mapped[str] = mapped_column(
+        String(300),
+        nullable=False,
+    )
+
+    details_json: Mapped[str] = mapped_column(
+        Text,
+        default="{}",
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_now,
+        nullable=False,
+    )
+
+
 _settings = get_settings()
 _connect_args = (
     {"check_same_thread": False} if _settings.database_url.startswith("sqlite") else {}

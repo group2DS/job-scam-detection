@@ -425,3 +425,221 @@ def test_invalid_json_becomes_dashboard_error(monkeypatch):
 
     with pytest.raises(HakikiHireAPIError, match="invalid JSON response"):
         client.health()
+# Registry Management API client
+# Registry Management API client
+
+
+def test_registry_client_lists_records(monkeypatch):
+    client = HakikiHireAPIClient(
+        base_url="https://example.test",
+        access_token="test-token",
+    )
+    captured = {}
+
+    def fake_request(method, path, params=None, json_body=None):
+        captured.update(
+            {
+                "method": method,
+                "path": path,
+                "params": params,
+                "json_body": json_body,
+            }
+        )
+        return [{"id": 1, "category": "company", "name": "Example Company"}]
+
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    result = client.get_registry_records(
+        category="company",
+        search="Example",
+        include_inactive=True,
+    )
+
+    assert result[0]["name"] == "Example Company"
+    assert captured == {
+        "method": "GET",
+        "path": "/api/registry",
+        "params": {
+            "include_inactive": True,
+            "category": "company",
+            "search": "Example",
+        },
+        "json_body": None,
+    }
+
+
+def test_registry_client_rejects_invalid_category():
+    client = HakikiHireAPIClient(
+        base_url="https://example.test",
+    )
+
+    with pytest.raises(ValueError, match="category must be company"):
+        client.get_registry_records(category="unknown")
+
+
+def test_registry_client_creates_record(monkeypatch):
+    client = HakikiHireAPIClient(
+        base_url="https://example.test",
+        access_token="test-token",
+    )
+    captured = {}
+
+    def fake_request(method, path, params=None, json_body=None):
+        captured.update(
+            {
+                "method": method,
+                "path": path,
+                "json_body": json_body,
+            }
+        )
+        return {
+            "id": 7,
+            "category": "company",
+            "name": "Example Company",
+        }
+
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    result = client.create_registry_record(
+        {
+            "category": "company",
+            "name": "  Example Company  ",
+            "external_id": "C-007",
+            "registration_number": "C.007",
+        }
+    )
+
+    assert result["id"] == 7
+    assert captured["method"] == "POST"
+    assert captured["path"] == "/api/registry"
+    assert captured["json_body"]["name"] == "Example Company"
+
+
+def test_registry_client_updates_record(monkeypatch):
+    client = HakikiHireAPIClient(
+        base_url="https://example.test",
+        access_token="test-token",
+    )
+    captured = {}
+
+    def fake_request(method, path, params=None, json_body=None):
+        captured.update(
+            {
+                "method": method,
+                "path": path,
+                "json_body": json_body,
+            }
+        )
+        return {"id": 7, "county": "Kiambu"}
+
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    result = client.update_registry_record(
+        7,
+        {"county": "Kiambu"},
+    )
+
+    assert result["county"] == "Kiambu"
+    assert captured == {
+        "method": "PATCH",
+        "path": "/api/registry/7",
+        "json_body": {"county": "Kiambu"},
+    }
+
+
+def test_registry_client_changes_status(monkeypatch):
+    client = HakikiHireAPIClient(
+        base_url="https://example.test",
+        access_token="test-token",
+    )
+    captured = {}
+
+    def fake_request(method, path, params=None, json_body=None):
+        captured.update(
+            {
+                "method": method,
+                "path": path,
+                "json_body": json_body,
+            }
+        )
+        return {"id": 7, "is_active": False}
+
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    result = client.update_registry_record_status(
+        7,
+        False,
+    )
+
+    assert result["is_active"] is False
+    assert captured == {
+        "method": "PATCH",
+        "path": "/api/registry/7/status",
+        "json_body": {"is_active": False},
+    }
+
+
+def test_registry_client_gets_audit_history(monkeypatch):
+    client = HakikiHireAPIClient(
+        base_url="https://example.test",
+        access_token="test-token",
+    )
+    captured = {}
+
+    def fake_request(method, path, params=None, json_body=None):
+        captured.update(
+            {
+                "method": method,
+                "path": path,
+            }
+        )
+        return [{"id": 1, "action": "created"}]
+
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    result = client.get_registry_audit_history(7)
+
+    assert result[0]["action"] == "created"
+    assert captured == {
+        "method": "GET",
+        "path": "/api/registry/7/audit",
+    }
+
+
+def test_registry_client_validates_record_ids():
+    client = HakikiHireAPIClient(
+        base_url="https://example.test",
+    )
+
+    with pytest.raises(ValueError, match="valid registry record ID"):
+        client.update_registry_record(0, {"county": "Kiambu"})
+
+    with pytest.raises(ValueError, match="valid registry record ID"):
+        client.update_registry_record_status(0, False)
+
+    with pytest.raises(ValueError, match="valid registry record ID"):
+        client.get_registry_audit_history(0)
+
+
+def test_registry_client_rejects_invalid_response_types(monkeypatch):
+    client = HakikiHireAPIClient(
+        base_url="https://example.test",
+    )
+
+    monkeypatch.setattr(
+        client,
+        "_request",
+        lambda *args, **kwargs: {"unexpected": "object"},
+    )
+
+    with pytest.raises(
+        HakikiHireAPIError,
+        match="registry response was not a JSON list",
+    ):
+        client.get_registry_records()
+
+    with pytest.raises(
+        HakikiHireAPIError,
+        match="registry-audit response was not a JSON list",
+    ):
+        client.get_registry_audit_history(1)

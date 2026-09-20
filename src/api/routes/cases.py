@@ -279,7 +279,7 @@ def submit_decision(
             detail="Case not found.",
         )
 
-    if case.review_status == "resolved":
+    if case.review_status == "resolved" and case.review_outcome:
         raise HTTPException(
             status_code=409,
             detail=(

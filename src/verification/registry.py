@@ -22,6 +22,9 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
 
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from src.core.config import get_settings
 from src.core.schemas import (
     EntityType,
@@ -29,6 +32,7 @@ from src.core.schemas import (
     VerificationResult,
     VerificationStatus,
 )
+from src.db.models import RegistryRecord
 
 log = logging.getLogger(__name__)
 
@@ -145,17 +149,106 @@ def _read_blacklist(path: Path) -> list[BlacklistEntry]:
     return entries
 
 
-def load() -> None:
-    """Load registry data once at startup."""
+def load(force: bool = False) -> None:
+    """Load registry seed data, optionally replacing in-memory records."""
     global _companies, _agencies, _blacklist, _loaded
-    if _loaded:
+
+    if _loaded and not force:
         return
-    _loaded = True
 
     settings = get_settings()
-    _companies = _read_csv(settings.company_registry_csv, EntityType.COMPANY)
-    _agencies = _read_csv(settings.agency_registry_csv, EntityType.AGENCY)
-    _blacklist = _read_blacklist(settings.blacklist_csv)
+
+    _companies = _read_csv(
+        settings.company_registry_csv,
+        EntityType.COMPANY,
+    )
+    _agencies = _read_csv(
+        settings.agency_registry_csv,
+        EntityType.AGENCY,
+    )
+    _blacklist = _read_blacklist(
+        settings.blacklist_csv,
+    )
+    _loaded = True
+
+
+def reload_from_database(session: Session) -> int:
+    """Replace in-memory registry data with active database records."""
+    global _companies, _agencies, _blacklist, _loaded
+
+    records = session.scalars(
+        select(RegistryRecord)
+        .where(RegistryRecord.is_active.is_(True))
+        .order_by(
+            RegistryRecord.category.asc(),
+            RegistryRecord.name.asc(),
+        )
+    ).all()
+
+    companies: list[RegistryEntry] = []
+    agencies: list[RegistryEntry] = []
+    blacklist: list[BlacklistEntry] = []
+
+    for record in records:
+        if record.category == "company":
+            companies.append(
+                RegistryEntry(
+                    entity_id=record.external_id or str(record.id),
+                    name=record.name,
+                    normalised=record.normalised_name,
+                    basic=basic_normalise(record.name),
+                    status=record.status,
+                    entity_type=EntityType.COMPANY,
+                )
+            )
+            continue
+
+        if record.category == "agency":
+            agencies.append(
+                RegistryEntry(
+                    entity_id=record.external_id or str(record.id),
+                    name=record.name,
+                    normalised=record.normalised_name,
+                    basic=basic_normalise(record.name),
+                    status=record.status,
+                    entity_type=EntityType.AGENCY,
+                    licence_status=record.licence_status or "",
+                )
+            )
+            continue
+
+        if record.category == "blacklist":
+            kind = record.blacklist_kind or "name"
+            blacklist.append(
+                BlacklistEntry(
+                    value=record.name,
+                    normalised=(
+                        record.normalised_name
+                        if kind == "name"
+                        else record.name.lower()
+                    ),
+                    kind=kind,
+                    reason=(
+                        record.blacklist_reason
+                        or "Listed by regulator"
+                    ),
+                )
+            )
+
+    _companies = companies
+    _agencies = agencies
+    _blacklist = blacklist
+    _loaded = True
+
+    log.info(
+        "Loaded %d companies, %d agencies, and %d blacklist "
+        "entries from persistent registry storage.",
+        len(_companies),
+        len(_agencies),
+        len(_blacklist),
+    )
+
+    return len(records)
 
 
 def _similarity(left: str, right: str) -> float:

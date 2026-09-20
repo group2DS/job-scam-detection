@@ -16,6 +16,13 @@ from src.rules import engine
 from src.verification import registry
 
 
+@pytest.fixture(autouse=True)
+def restore_registry_seed_data():
+    """Keep pipeline Registry tests independent from API test state."""
+    registry.load(force=True)
+    yield
+
+
 def assess(text: str):
     """Run the full pipeline on pasted text, bypassing the API."""
     posting = extractor.from_text(text)

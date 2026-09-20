@@ -29,6 +29,7 @@ from analytics import (
 )
 from api_client import HakikiHireAPIClient, HakikiHireAPIError
 from report_generator import generate_summary_report_pdf, report_filename
+from registry_management import render_registry_management
 
 API_BASE_URL = os.getenv(
     "HAKIKI_HIRE_API_BASE_URL",
@@ -47,7 +48,11 @@ VERIFICATION_LABELS = {
     "possible_impersonation": "Possible impersonation",
     "not_applicable": "Not applicable",
 }
-REVIEW_LABELS = {"open": "Open", "resolved": "Resolved"}
+REVIEW_LABELS = {
+    "open": "Open",
+    "resolved": "Resolved",
+    "decision_incomplete": "Decision incomplete",
+}
 OUTCOME_LABELS = {
     "confirmed_legitimate": "Confirmed legitimate",
     "confirmed_scam": "Confirmed scam",
@@ -107,6 +112,30 @@ def format_datetime(value: Any) -> str:
         return datetime.fromisoformat(text.replace("Z", "+00:00")).strftime("%d %b %Y %H:%M")
     except ValueError:
         return text
+
+
+def review_queue_state(
+    case: Dict[str, Any],
+) -> Tuple[str, str]:
+    """Return the officer-facing queue status and action label."""
+
+    has_outcome = bool(
+        str(
+            case.get("review_outcome")
+            or ""
+        ).strip()
+    )
+
+    if has_outcome:
+        return "resolved", "View decision"
+
+    if case.get("review_status") == "resolved":
+        return (
+            "decision_incomplete",
+            "Complete decision",
+        )
+
+    return "open", "Review"
 
 
 def format_boolean(value: Any) -> str:
@@ -206,6 +235,9 @@ def initialise_state() -> None:
         "navigation_page": "Overview",
         "login_error": None,
         "admin_view": False,
+        "registry_view": False,
+        "registry_refresh_nonce": 0,
+        "registry_success_message": None,
         "filter_risk": "All",
         "filter_verification": "All",
         "filter_status": "All",
@@ -216,6 +248,7 @@ def initialise_state() -> None:
         "case_snapshot": None,
         "case_snapshot_key": None,
         "force_case_refresh": False,
+        "destination_countries": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -240,6 +273,8 @@ def clear_authentication() -> None:
     ):
         st.session_state[key] = None
     st.session_state.admin_view = False
+    st.session_state.registry_view = False
+    st.session_state.registry_success_message = None
     st.session_state.pending_navigation = "Overview"
 
 
@@ -334,15 +369,33 @@ def render_sidebar(client: HakikiHireAPIClient) -> Tuple[str, Dict[str, Any]]:
 
     if role == "admin":
         with st.sidebar.expander("Administration", expanded=False):
-            if st.button("Manage authorised users", key="open_admin", width="stretch"):
+            if st.button(
+                "Manage authorised users",
+                key="open_admin",
+                width="stretch",
+            ):
                 st.session_state.admin_view = True
+                st.session_state.registry_view = False
                 st.rerun()
 
-    try:
-        countries = client.get_destination_countries()
-    except HakikiHireAPIError as error:
-        handle_api_error(error)
-        countries = []
+            if st.button(
+                "Manage registry",
+                key="open_registry",
+                width="stretch",
+            ):
+                st.session_state.registry_view = True
+                st.session_state.admin_view = False
+                st.rerun()
+
+    countries = st.session_state.get("destination_countries")
+    if countries is None:
+        try:
+            countries = client.get_destination_countries()
+            st.session_state.destination_countries = list(countries)
+        except HakikiHireAPIError as error:
+            handle_api_error(error)
+            countries = []
+
     valid_countries = ["All", *countries]
     if st.session_state.filter_country not in valid_countries:
         st.session_state.filter_country = "All"
@@ -474,27 +527,6 @@ def render_summary(cases: List[Dict[str, Any]]) -> None:
     columns[4].metric("Resolved", sum(case.get("review_status") == "resolved" for case in cases))
 
 
-def render_case_card(case: Dict[str, Any]) -> None:
-    case_id = display_value(case.get("case_id"), "Unknown case")
-    st.markdown(
-        '<div class="case-card"><h3>{}</h3><div>{}</div><div style="margin-top:.55rem;">{} {} {}</div>'
-        '<div class="case-meta">Case {} | Overseas: {} | Received: {}</div></div>'.format(
-            escape(display_value(case.get("title"), "Title not provided")),
-            escape(display_value(case.get("entity_name"), "Entity not provided")),
-            risk_badge(case.get("risk_level")),
-            verification_badge(case.get("verification_status")),
-            status_badge(case.get("review_status")),
-            escape(case_id),
-            escape(format_boolean(case.get("is_overseas"))),
-            escape(format_datetime(case.get("created_at"))),
-        ),
-        unsafe_allow_html=True,
-    )
-    if st.button("Review", key="review_{}".format(case_id)):
-        st.session_state.selected_case_id = case_id
-        st.rerun()
-
-
 def render_overview(
     cases: List[Dict[str, Any]],
 ) -> None:
@@ -598,7 +630,7 @@ def render_overview(
     ]
 
     header_columns = st.columns(
-        [1.2, 2.1, 1.8, 1.2, 1.6, 1.0, 1.25, 0.85]
+        [1.0, 1.55, 1.45, 1.0, 1.35, 1.55, 0.85, 1.1, 1.75]
     )
 
     headings = [
@@ -607,6 +639,7 @@ def render_overview(
         "Entity",
         "Risk",
         "Verification",
+        "Status",
         "Market",
         "Received",
         "",
@@ -631,7 +664,7 @@ def render_overview(
         )
 
         row = st.columns(
-            [1.2, 2.1, 1.8, 1.2, 1.6, 1.0, 1.25, 0.85]
+            [1.0, 1.55, 1.45, 1.0, 1.35, 1.55, 0.85, 1.1, 1.75]
         )
 
         row[0].write(case_id)
@@ -666,24 +699,50 @@ def render_overview(
             unsafe_allow_html=True,
         )
 
-        row[5].write(
+        queue_status, action_label = review_queue_state(
+            case
+        )
+
+        row[5].markdown(
+            status_badge(
+                queue_status
+            ),
+            unsafe_allow_html=True,
+        )
+
+        row[6].write(
             "Overseas"
             if case.get("is_overseas")
             else "Local"
         )
 
-        row[6].write(
+        row[7].write(
             format_datetime(
                 case.get("created_at")
             )
         )
 
-        if row[7].button(
-            "Review",
+        action_help = {
+            "Review": (
+                "Open this case and record a reviewer decision."
+            ),
+            "Complete decision": (
+                "This historical case is missing its final "
+                "reviewer outcome. Open it to complete the decision."
+            ),
+            "View decision": (
+                "Open this resolved case and view its recorded "
+                "reviewer decision."
+            ),
+        }.get(action_label)
+
+        if row[8].button(
+            action_label,
             key="overview_review_{}_{}".format(
                 case_id,
                 start + index,
             ),
+            help=action_help,
             width="stretch",
         ):
             st.session_state.selected_case_id = (
@@ -991,10 +1050,13 @@ def main() -> None:
     if st.session_state.admin_view:
         render_access_management(client)
         return
-    cases = load_filtered_cases(client, filters)
+    if st.session_state.registry_view:
+        render_registry_management(client)
+        return
     if st.session_state.selected_case_id:
         render_case_detail(client, st.session_state.selected_case_id)
         return
+    cases = load_filtered_cases(client, filters)
     render_header()
     if page == "Overview":
         render_overview(cases)

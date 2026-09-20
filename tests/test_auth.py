@@ -12,7 +12,14 @@ from sqlalchemy.pool import StaticPool
 
 from src.api.main import app
 from src.core.security import create_access_token, hash_password
-from src.db.models import Base, ReviewCase, User, get_session
+from src.db.models import (
+    Base,
+    RegistryAuditEntry,
+    RegistryRecord,
+    ReviewCase,
+    User,
+    get_session,
+)
 
 TEST_DATABASE_URL = "sqlite+pysqlite:///:memory:"
 TEST_PASSWORD = "StrongPassword123!"
@@ -579,3 +586,544 @@ def test_health_endpoint_remains_public():
 def test_analysis_formats_endpoint_remains_public():
     response = client.get("/api/analyse/formats")
     assert response.status_code != 401
+
+
+# Registry management
+
+
+def test_registry_list_requires_authentication():
+    response = client.get("/api/registry")
+    assert response.status_code == 401
+
+
+def test_reviewer_cannot_list_registry_records():
+    create_active_reviewer()
+
+    response = client.get(
+        "/api/registry",
+        headers=bearer_headers(
+            username="reviewer-one",
+        ),
+    )
+
+    assert response.status_code == 403
+    assert (
+        response.json()["detail"]
+        == "Administrator access is required."
+    )
+
+
+def test_admin_can_list_registry_records():
+    response = client.get(
+        "/api/registry",
+        headers=bearer_headers(),
+    )
+
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+# Registry management
+
+
+def test_registry_list_requires_authentication():
+    response = client.get("/api/registry")
+    assert response.status_code == 401
+
+
+def test_reviewer_cannot_list_registry_records():
+    create_active_reviewer()
+
+    response = client.get(
+        "/api/registry",
+        headers=bearer_headers(
+            username="reviewer-one",
+        ),
+    )
+
+    assert response.status_code == 403
+    assert (
+        response.json()["detail"]
+        == "Administrator access is required."
+    )
+
+
+def test_admin_can_list_registry_records():
+    response = client.get(
+        "/api/registry",
+        headers=bearer_headers(),
+    )
+
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+def company_registry_payload():
+    return {
+        "category": "company",
+        "external_id": "C-TEST-REGISTRY",
+        "name": "Test Registry Company Limited",
+        "registration_number": "C.TEST.2026",
+        "status": "active",
+        "county": "Nairobi",
+        "record_is_mock": True,
+    }
+
+
+def test_registry_create_requires_authentication():
+    response = client.post(
+        "/api/registry",
+        json=company_registry_payload(),
+    )
+
+    assert response.status_code == 401
+
+
+def test_reviewer_cannot_create_registry_record():
+    create_active_reviewer()
+
+    response = client.post(
+        "/api/registry",
+        headers=bearer_headers(
+            username="reviewer-one",
+        ),
+        json=company_registry_payload(),
+    )
+
+    assert response.status_code == 403
+    assert (
+        response.json()["detail"]
+        == "Administrator access is required."
+    )
+
+
+def test_admin_can_create_company_registry_record():
+    response = client.post(
+        "/api/registry",
+        headers=bearer_headers(),
+        json=company_registry_payload(),
+    )
+
+    assert response.status_code == 201
+
+    body = response.json()
+
+    assert body["category"] == "company"
+    assert body["external_id"] == "C-TEST-REGISTRY"
+    assert body["name"] == "Test Registry Company Limited"
+    assert body["registration_number"] == "C.TEST.2026"
+    assert body["is_active"] is True
+    assert body["created_by"] == "admin"
+
+    session = TestingSessionLocal()
+
+    try:
+        record = session.scalar(
+            select(RegistryRecord).where(
+                RegistryRecord.external_id
+                == "C-TEST-REGISTRY"
+            )
+        )
+
+        assert record is not None
+
+        audit = session.scalar(
+            select(RegistryAuditEntry).where(
+                RegistryAuditEntry.registry_record_id
+                == record.id
+            )
+        )
+
+        assert audit is not None
+        assert audit.actor == "admin"
+        assert audit.action == "created"
+    finally:
+        session.close()
+
+
+def test_duplicate_active_registry_name_is_rejected():
+    first = client.post(
+        "/api/registry",
+        headers=bearer_headers(),
+        json=company_registry_payload(),
+    )
+
+    assert first.status_code == 201
+
+    duplicate = company_registry_payload()
+    duplicate["external_id"] = "C-TEST-DUPLICATE"
+    duplicate["registration_number"] = "C.TEST.DUPLICATE"
+
+    second = client.post(
+        "/api/registry",
+        headers=bearer_headers(),
+        json=duplicate,
+    )
+
+    assert second.status_code == 409
+
+
+def _create_test_company():
+    response = client.post(
+        "/api/registry",
+        headers=bearer_headers(),
+        json=company_registry_payload(),
+    )
+
+    assert response.status_code == 201
+
+    return response.json()
+
+
+def test_registry_update_requires_authentication():
+    response = client.patch(
+        "/api/registry/999",
+        json={"county": "Kiambu"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_reviewer_cannot_update_registry_record():
+    created = _create_test_company()
+    create_active_reviewer()
+
+    response = client.patch(
+        "/api/registry/{}".format(created["id"]),
+        headers=bearer_headers(
+            username="reviewer-one",
+        ),
+        json={"county": "Kiambu"},
+    )
+
+    assert response.status_code == 403
+    assert (
+        response.json()["detail"]
+        == "Administrator access is required."
+    )
+
+
+def test_admin_can_update_registry_record():
+    created = _create_test_company()
+
+    response = client.patch(
+        "/api/registry/{}".format(created["id"]),
+        headers=bearer_headers(),
+        json={
+            "name": "Updated Registry Company Limited",
+            "county": "Kiambu",
+            "status": "dormant",
+        },
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert body["name"] == "Updated Registry Company Limited"
+    assert body["county"] == "Kiambu"
+    assert body["status"] == "dormant"
+    assert body["updated_by"] == "admin"
+
+    session = TestingSessionLocal()
+
+    try:
+        audits = session.scalars(
+            select(RegistryAuditEntry)
+            .where(
+                RegistryAuditEntry.registry_record_id
+                == created["id"]
+            )
+            .order_by(
+                RegistryAuditEntry.id.asc()
+            )
+        ).all()
+
+        assert [entry.action for entry in audits] == [
+            "created",
+            "updated",
+        ]
+
+        assert audits[-1].actor == "admin"
+        assert "county" in audits[-1].details_json
+        assert "status" in audits[-1].details_json
+    finally:
+        session.close()
+
+
+def test_registry_update_rejects_missing_record():
+    response = client.patch(
+        "/api/registry/999999",
+        headers=bearer_headers(),
+        json={"county": "Kiambu"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_registry_update_rejects_empty_request():
+    created = _create_test_company()
+
+    response = client.patch(
+        "/api/registry/{}".format(created["id"]),
+        headers=bearer_headers(),
+        json={},
+    )
+
+    assert response.status_code == 422
+
+
+def test_registry_update_rejects_unchanged_values():
+    created = _create_test_company()
+
+    response = client.patch(
+        "/api/registry/{}".format(created["id"]),
+        headers=bearer_headers(),
+        json={"county": "Nairobi"},
+    )
+
+    assert response.status_code == 409
+
+
+def test_registry_status_update_requires_authentication():
+    response = client.patch(
+        "/api/registry/999/status",
+        json={"is_active": False},
+    )
+
+    assert response.status_code == 401
+
+
+def test_reviewer_cannot_change_registry_status():
+    created = _create_test_company()
+    create_active_reviewer()
+
+    response = client.patch(
+        "/api/registry/{}/status".format(
+            created["id"]
+        ),
+        headers=bearer_headers(
+            username="reviewer-one",
+        ),
+        json={"is_active": False},
+    )
+
+    assert response.status_code == 403
+    assert (
+        response.json()["detail"]
+        == "Administrator access is required."
+    )
+
+
+def test_admin_can_deactivate_registry_record():
+    created = _create_test_company()
+
+    response = client.patch(
+        "/api/registry/{}/status".format(
+            created["id"]
+        ),
+        headers=bearer_headers(),
+        json={"is_active": False},
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert body["is_active"] is False
+    assert body["updated_by"] == "admin"
+
+    session = TestingSessionLocal()
+
+    try:
+        audits = session.scalars(
+            select(RegistryAuditEntry)
+            .where(
+                RegistryAuditEntry.registry_record_id
+                == created["id"]
+            )
+            .order_by(
+                RegistryAuditEntry.id.asc()
+            )
+        ).all()
+
+        assert [entry.action for entry in audits] == [
+            "created",
+            "deactivated",
+        ]
+
+        assert audits[-1].actor == "admin"
+        assert '"after": false' in audits[-1].details_json
+    finally:
+        session.close()
+
+
+def test_admin_can_reactivate_registry_record():
+    created = _create_test_company()
+
+    deactivated = client.patch(
+        "/api/registry/{}/status".format(
+            created["id"]
+        ),
+        headers=bearer_headers(),
+        json={"is_active": False},
+    )
+
+    assert deactivated.status_code == 200
+
+    reactivated = client.patch(
+        "/api/registry/{}/status".format(
+            created["id"]
+        ),
+        headers=bearer_headers(),
+        json={"is_active": True},
+    )
+
+    assert reactivated.status_code == 200
+    assert reactivated.json()["is_active"] is True
+
+    session = TestingSessionLocal()
+
+    try:
+        audits = session.scalars(
+            select(RegistryAuditEntry)
+            .where(
+                RegistryAuditEntry.registry_record_id
+                == created["id"]
+            )
+            .order_by(
+                RegistryAuditEntry.id.asc()
+            )
+        ).all()
+
+        assert [entry.action for entry in audits] == [
+            "created",
+            "deactivated",
+            "activated",
+        ]
+    finally:
+        session.close()
+
+
+def test_registry_status_rejects_unchanged_state():
+    created = _create_test_company()
+
+    response = client.patch(
+        "/api/registry/{}/status".format(
+            created["id"]
+        ),
+        headers=bearer_headers(),
+        json={"is_active": True},
+    )
+
+    assert response.status_code == 409
+    assert (
+        response.json()["detail"]
+        == "The registry record is already active."
+    )
+
+
+def test_registry_status_rejects_missing_record():
+    response = client.patch(
+        "/api/registry/999999/status",
+        headers=bearer_headers(),
+        json={"is_active": False},
+    )
+
+    assert response.status_code == 404
+
+
+def test_registry_audit_requires_authentication():
+    response = client.get(
+        "/api/registry/999/audit"
+    )
+
+    assert response.status_code == 401
+
+
+def test_reviewer_cannot_view_registry_audit_history():
+    created = _create_test_company()
+    create_active_reviewer()
+
+    response = client.get(
+        "/api/registry/{}/audit".format(
+            created["id"]
+        ),
+        headers=bearer_headers(
+            username="reviewer-one",
+        ),
+    )
+
+    assert response.status_code == 403
+    assert (
+        response.json()["detail"]
+        == "Administrator access is required."
+    )
+
+
+def test_admin_can_view_registry_audit_history():
+    created = _create_test_company()
+
+    updated = client.patch(
+        "/api/registry/{}".format(
+            created["id"]
+        ),
+        headers=bearer_headers(),
+        json={
+            "county": "Kiambu",
+        },
+    )
+
+    assert updated.status_code == 200
+
+    deactivated = client.patch(
+        "/api/registry/{}/status".format(
+            created["id"]
+        ),
+        headers=bearer_headers(),
+        json={
+            "is_active": False,
+        },
+    )
+
+    assert deactivated.status_code == 200
+
+    response = client.get(
+        "/api/registry/{}/audit".format(
+            created["id"]
+        ),
+        headers=bearer_headers(),
+    )
+
+    assert response.status_code == 200
+
+    entries = response.json()
+
+    assert [
+        entry["action"]
+        for entry in entries
+    ] == [
+        "deactivated",
+        "updated",
+        "created",
+    ]
+
+    assert all(
+        entry["actor"] == "admin"
+        for entry in entries
+    )
+
+    assert all(
+        entry["registry_record_id"]
+        == created["id"]
+        for entry in entries
+    )
+
+
+def test_registry_audit_rejects_missing_record():
+    response = client.get(
+        "/api/registry/999999/audit",
+        headers=bearer_headers(),
+    )
+
+    assert response.status_code == 404

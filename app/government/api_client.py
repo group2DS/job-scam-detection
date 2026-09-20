@@ -361,3 +361,155 @@ class HakikiHireAPIClient:
             ),
             "The decision response was not a JSON object.",
         )
+
+    def get_registry_records(
+        self,
+        category: Optional[str] = None,
+        search: Optional[str] = None,
+        include_inactive: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """Return registry records available to an administrator."""
+
+        if category not in {
+            None,
+            "company",
+            "agency",
+            "blacklist",
+        }:
+            raise ValueError(
+                "category must be company, agency, or blacklist"
+            )
+
+        params: Dict[str, Any] = {
+            "include_inactive": bool(include_inactive),
+        }
+
+        if category:
+            params["category"] = category
+
+        if search and search.strip():
+            params["search"] = search.strip()
+
+        result = self._request(
+            "GET",
+            "/api/registry",
+            params=params,
+        )
+
+        if not isinstance(result, list):
+            raise HakikiHireAPIError(
+                "The registry response was not a JSON list."
+            )
+
+        return result
+
+    def create_registry_record(
+        self,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Create one persistent registry record."""
+
+        if not isinstance(payload, dict):
+            raise ValueError(
+                "Registry record data must be a dictionary."
+            )
+
+        category = payload.get("category")
+        name = str(payload.get("name") or "").strip()
+
+        if category not in {
+            "company",
+            "agency",
+            "blacklist",
+        }:
+            raise ValueError(
+                "category must be company, agency, or blacklist"
+            )
+
+        if not name:
+            raise ValueError("Registry name is required.")
+
+        cleaned_payload = dict(payload)
+        cleaned_payload["category"] = category
+        cleaned_payload["name"] = name
+
+        return self._require_dict(
+            self._request(
+                "POST",
+                "/api/registry",
+                json_body=cleaned_payload,
+            ),
+            "The create-registry response was not a JSON object.",
+        )
+
+    def update_registry_record(
+        self,
+        record_id: int,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Update one persistent registry record."""
+
+        if not isinstance(record_id, int) or record_id < 1:
+            raise ValueError(
+                "A valid registry record ID is required."
+            )
+
+        if not isinstance(payload, dict) or not payload:
+            raise ValueError(
+                "At least one registry field is required."
+            )
+
+        return self._require_dict(
+            self._request(
+                "PATCH",
+                f"/api/registry/{record_id}",
+                json_body=dict(payload),
+            ),
+            "The update-registry response was not a JSON object.",
+        )
+
+    def update_registry_record_status(
+        self,
+        record_id: int,
+        is_active: bool,
+    ) -> Dict[str, Any]:
+        """Activate or deactivate one registry record."""
+
+        if not isinstance(record_id, int) or record_id < 1:
+            raise ValueError(
+                "A valid registry record ID is required."
+            )
+
+        return self._require_dict(
+            self._request(
+                "PATCH",
+                f"/api/registry/{record_id}/status",
+                json_body={
+                    "is_active": bool(is_active),
+                },
+            ),
+            "The registry-status response was not a JSON object.",
+        )
+
+    def get_registry_audit_history(
+        self,
+        record_id: int,
+    ) -> List[Dict[str, Any]]:
+        """Return one registry record's audit history."""
+
+        if not isinstance(record_id, int) or record_id < 1:
+            raise ValueError(
+                "A valid registry record ID is required."
+            )
+
+        result = self._request(
+            "GET",
+            f"/api/registry/{record_id}/audit",
+        )
+
+        if not isinstance(result, list):
+            raise HakikiHireAPIError(
+                "The registry-audit response was not a JSON list."
+            )
+
+        return result

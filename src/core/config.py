@@ -39,8 +39,8 @@ class Settings(BaseSettings):
 
     # Decision thresholds. Tunable without retraining, which is the whole
     # point of keeping the model binary and the tiers separate.
-    high_risk_threshold: float = 0.70
-    suspicious_threshold: float = 0.35
+    high_risk_threshold: float = 0.35
+    suspicious_threshold: float = 0.10
 
     # Fuzzy matching. Above the impersonation floor but below an exact match
     # is treated as possible impersonation, not as a verified entity.

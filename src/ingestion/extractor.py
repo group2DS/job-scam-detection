@@ -106,7 +106,10 @@ def looks_like_listing(text: str, min_length: int = 200) -> tuple[bool, str]:
     stripped = (text or "").strip()
 
     if len(stripped) < min_length:
-        return False, "too little text could be read from it"
+        return False, (
+            "too little readable text could be extracted, which usually means "
+            "the page loads its content in the browser"
+        )
 
     if _WALL_MARKERS.search(stripped[:2000]):
         return False, "it requires a login or blocks automated access"

@@ -357,12 +357,19 @@ def _report_metrics(
             == "Duplicate report"
         ).sum()
     )
+    verified_but_suspicious = int(
+        (
+            frame["outcome"]
+            == "Verified but suspicious"
+        ).sum()
+    )
 
     recognized = (
         confirmed_legitimate
         + confirmed_scams
         + needs_more_evidence
         + duplicates
+        + verified_but_suspicious
     )
 
     other_resolutions = max(
@@ -376,6 +383,7 @@ def _report_metrics(
         "Confirmed scams": confirmed_scams,
         "Needs more evidence": needs_more_evidence,
         "Duplicate reports": duplicates,
+        "Verified but suspicious": verified_but_suspicious,
         "Other resolutions": other_resolutions,
         "Resolution rate": "{:.1f}%".format(
             (resolved / total * 100)
@@ -388,7 +396,7 @@ def render_report_summary(cases: Iterable[Dict[str, Any]]) -> None:
     """Render outcome-focused KPIs for the Reports page."""
     frame = cases_dataframe(cases)
     metrics = _report_metrics(frame)
-    columns = st.columns(7)
+    columns = st.columns(8)
     for column, (label, value) in zip(columns, metrics.items()):
         column.metric(label, value)
 

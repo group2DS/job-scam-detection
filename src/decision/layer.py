@@ -154,6 +154,17 @@ def _reasons(
                 source="model",
             )
         )
+    elif not hits:
+        reasons.append(
+            Reason(
+                code="model_flagged",
+                text=(
+                    "The automated content model rated this listing as having "
+                    "elevated risk, though no specific rule pattern was matched."
+                ),
+                source="model",
+            )
+        )   
 
     return reasons
 

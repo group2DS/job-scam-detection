@@ -32,3 +32,5 @@ reportlab>=5.0.1
 # Required by src/models/feature_builder
 pandas>=2.0
 scipy>=1.11
+
+streamlit>=1.40

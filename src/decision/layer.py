@@ -142,6 +142,18 @@ def _reasons(
                 source="registry",
             )
         )
+    elif verification.status == VerificationStatus.NOT_APPLICABLE:
+        reasons.append(
+            Reason(
+                code="no_entity_named",
+                text=(
+                    "No employer or recruitment agency was named in this "
+                    "listing, so there was nothing to check against the "
+                    "registry."
+                ),
+                source="registry",
+            )
+        )
 
     for hit in sorted(hits, key=lambda h: h.weight, reverse=True):
         reasons.append(Reason(code=hit.code, text=hit.label, source="rule"))
@@ -185,6 +197,17 @@ def _recommendation(risk: RiskLevel, verification: VerificationStatus) -> str:
             "organisation could not be verified. Do not send money or personal "
             "documents until you have confirmed it independently."
         )
+
+    if (
+        risk == RiskLevel.LOWER_RISK
+        and verification == VerificationStatus.NOT_APPLICABLE
+    ):
+        return (
+            "No strong scam indicators were found, but no employer or agency "
+            "was named, so there was nothing to verify. Confirm who you are "
+            "dealing with before sharing documents or paying any fee."
+        )
+
 
     return (
         "No strong scam indicators were found and the organisation was located "

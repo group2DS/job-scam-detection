@@ -14,7 +14,7 @@ beautifulsoup4>=4.12
 
 # Model loading
 joblib>=1.3
-scikit-learn==1.7.1
+scikit-learn==1.9.0
 
 # Tests
 pytest>=8.0
@@ -33,4 +33,11 @@ reportlab>=5.0.1
 pandas>=2.0
 scipy>=1.11
 
+# Government dashboard
 streamlit>=1.40
+
+# Government dashboard HTTP client
+requests>=2.31
+
+# Starlette/FastAPI test client
+httpx2==2.13.0

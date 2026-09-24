@@ -324,13 +324,41 @@ def _render_create_form(
                 ),
             )
 
+            blacklist_confirmed = True
+
+            if category == "blacklist":
+                blacklist_confirmed = st.checkbox(
+                    "I confirm that this entry should be added "
+                    "to the active blacklist.",
+                    value=False,
+                    help=(
+                        "Blacklist entries immediately affect "
+                        "entity verification results."
+                    ),
+                    key="registry_blacklist_confirm",
+                )
+
             submitted = st.form_submit_button(
                 "Add registry record",
                 type="primary",
                 width="stretch",
+                disabled=(
+                    category == "blacklist"
+                    and not blacklist_confirmed
+                ),
             )
 
         if submitted:
+            if (
+                category == "blacklist"
+                and not blacklist_confirmed
+            ):
+                st.warning(
+                    "Confirm the blacklist action before "
+                    "adding this entry."
+                )
+                return
+
             payload = {
                 "category": category,
                 "name": name.strip(),
@@ -549,11 +577,32 @@ def _render_edit_controls(
             else "Reactivate record"
         )
 
+        status_change_confirmed = True
+
+        if is_active:
+            status_change_confirmed = st.checkbox(
+                "I confirm that this record should be "
+                "removed from active verification.",
+                value=False,
+                help=(
+                    "The record is preserved in Registry "
+                    "Management and can be reactivated later."
+                ),
+                key="registry_deactivate_confirm_{}_{}".format(
+                    category,
+                    selected_id,
+                ),
+            )
+
         if st.button(
             action_name,
             key="registry_status_{}_{}".format(
                 category,
                 selected_id,
+            ),
+            disabled=(
+                is_active
+                and not status_change_confirmed
             ),
             width="stretch",
         ):

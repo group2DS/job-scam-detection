@@ -631,6 +631,12 @@ def render_overview(
         start:start + page_size
     ]
 
+    if len(cases) >= 200:
+        st.info(
+            "Showing the first 200 matching cases. "
+            "Narrow the filters to view a smaller scope."
+        )
+
     header_columns = st.columns(
         [1.0, 1.55, 1.45, 1.0, 1.35, 1.55, 0.85, 1.1, 1.75]
     )

@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 
 from src.api.main import app
 from src.core.security import create_access_token, hash_password
+from src.core.schemas import EntityType, Posting, VerificationStatus
 from src.db.models import (
     Base,
     RegistryAuditEntry,
@@ -20,6 +21,7 @@ from src.db.models import (
     User,
     get_session,
 )
+from src.verification import registry
 
 TEST_DATABASE_URL = "sqlite+pysqlite:///:memory:"
 TEST_PASSWORD = "StrongPassword123!"
@@ -623,39 +625,6 @@ def test_admin_can_list_registry_records():
     assert isinstance(response.json(), list)
 
 
-# Registry management
-
-
-def test_registry_list_requires_authentication():
-    response = client.get("/api/registry")
-    assert response.status_code == 401
-
-
-def test_reviewer_cannot_list_registry_records():
-    create_active_reviewer()
-
-    response = client.get(
-        "/api/registry",
-        headers=bearer_headers(
-            username="reviewer-one",
-        ),
-    )
-
-    assert response.status_code == 403
-    assert (
-        response.json()["detail"]
-        == "Administrator access is required."
-    )
-
-
-def test_admin_can_list_registry_records():
-    response = client.get(
-        "/api/registry",
-        headers=bearer_headers(),
-    )
-
-    assert response.status_code == 200
-    assert isinstance(response.json(), list)
 
 
 def company_registry_payload():
@@ -1127,3 +1096,32 @@ def test_registry_audit_rejects_missing_record():
     )
 
     assert response.status_code == 404
+
+
+def test_deactivated_registry_record_stops_verifying():
+    created = _create_test_company()
+
+    posting = Posting(
+        employer_name="Test Registry Company Limited",
+        entity_type=EntityType.COMPANY,
+    )
+
+    before = registry.verify(posting)
+
+    assert before.status == VerificationStatus.VERIFIED
+    assert before.registry_id == "C-TEST-REGISTRY"
+
+    response = client.patch(
+        "/api/registry/{}/status".format(
+            created["id"]
+        ),
+        headers=bearer_headers(),
+        json={"is_active": False},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["is_active"] is False
+
+    after = registry.verify(posting)
+
+    assert after.status == VerificationStatus.UNVERIFIED

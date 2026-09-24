@@ -42,6 +42,7 @@ OUTCOME_LABELS = {
     "confirmed_scam": "Confirmed scam",
     "needs_more_evidence": "Needs more evidence",
     "duplicate": "Duplicate report",
+    "verified_but_suspicious": "Verified but suspicious",
 }
 RISK_DOMAIN = ["Lower risk", "Suspicious", "High risk"]
 RISK_RANGE = [GREEN, AMBER, RED]
@@ -56,11 +57,12 @@ VERIFICATION_RANGE = [GREEN, AMBER, RED, ORANGE, SLATE]
 OUTCOME_DOMAIN = [
     "Confirmed legitimate",
     "Confirmed scam",
+    "Verified but suspicious",
     "Needs more evidence",
     "Duplicate report",
     "Not yet decided",
 ]
-OUTCOME_RANGE = [GREEN, RED, AMBER, SLATE, LIGHT]
+OUTCOME_RANGE = [GREEN, RED, ORANGE, AMBER, SLATE, LIGHT]
 
 
 def _display(value: Any, fallback: str = "Not provided") -> str:
@@ -396,7 +398,7 @@ def render_report_summary(cases: Iterable[Dict[str, Any]]) -> None:
     """Render outcome-focused KPIs for the Reports page."""
     frame = cases_dataframe(cases)
     metrics = _report_metrics(frame)
-    columns = st.columns(8)
+    columns = st.columns(len(metrics))
     for column, (label, value) in zip(columns, metrics.items()):
         column.metric(label, value)
 

@@ -34,7 +34,7 @@ pandas>=2.0
 scipy>=1.11
 
 # Government dashboard
-streamlit>=1.38
+streamlit>=1.40
 
 # Government dashboard HTTP client
 requests>=2.31

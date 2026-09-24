@@ -42,6 +42,7 @@ OUTCOME_LABELS = {
     "confirmed_scam": "Confirmed scam",
     "needs_more_evidence": "Needs more evidence",
     "duplicate": "Duplicate report",
+    "verified_but_suspicious": "Verified but suspicious",
 }
 RISK_DOMAIN = ["Lower risk", "Suspicious", "High risk"]
 RISK_RANGE = [GREEN, AMBER, RED]
@@ -56,11 +57,12 @@ VERIFICATION_RANGE = [GREEN, AMBER, RED, ORANGE, SLATE]
 OUTCOME_DOMAIN = [
     "Confirmed legitimate",
     "Confirmed scam",
+    "Verified but suspicious",
     "Needs more evidence",
     "Duplicate report",
     "Not yet decided",
 ]
-OUTCOME_RANGE = [GREEN, RED, AMBER, SLATE, LIGHT]
+OUTCOME_RANGE = [GREEN, RED, ORANGE, AMBER, SLATE, LIGHT]
 
 
 def _display(value: Any, fallback: str = "Not provided") -> str:
@@ -324,24 +326,79 @@ def render_overview_analytics(cases: Iterable[Dict[str, Any]]) -> None:
         _resolution_progress(frame)
 
 
-def _report_metrics(frame: pd.DataFrame) -> Dict[str, Any]:
+def _report_metrics(
+    frame: pd.DataFrame,
+) -> Dict[str, Any]:
+    """Return complete decision KPIs for the reporting scope."""
+
     total = len(frame)
-    resolved = int((frame["status"] == "Resolved").sum())
+    resolved_mask = frame["status"] == "Resolved"
+    resolved = int(resolved_mask.sum())
+
+    confirmed_legitimate = int(
+        (
+            frame["outcome"]
+            == "Confirmed legitimate"
+        ).sum()
+    )
+    confirmed_scams = int(
+        (
+            frame["outcome"]
+            == "Confirmed scam"
+        ).sum()
+    )
+    needs_more_evidence = int(
+        (
+            frame["outcome"]
+            == "Needs more evidence"
+        ).sum()
+    )
+    duplicates = int(
+        (
+            frame["outcome"]
+            == "Duplicate report"
+        ).sum()
+    )
+    verified_but_suspicious = int(
+        (
+            frame["outcome"]
+            == "Verified but suspicious"
+        ).sum()
+    )
+
+    recognized = (
+        confirmed_legitimate
+        + confirmed_scams
+        + needs_more_evidence
+        + duplicates
+        + verified_but_suspicious
+    )
+
+    other_resolutions = max(
+        0,
+        resolved - recognized,
+    )
+
     return {
         "Total analysed": total,
-        "Confirmed legitimate": int((frame["outcome"] == "Confirmed legitimate").sum()),
-        "Confirmed scams": int((frame["outcome"] == "Confirmed scam").sum()),
-        "Needs more evidence": int((frame["outcome"] == "Needs more evidence").sum()),
-        "Duplicate reports": int((frame["outcome"] == "Duplicate report").sum()),
-        "Resolution rate": "{:.1f}%".format((resolved / total * 100) if total else 0),
+        "Confirmed legitimate": confirmed_legitimate,
+        "Confirmed scams": confirmed_scams,
+        "Needs more evidence": needs_more_evidence,
+        "Duplicate reports": duplicates,
+        "Verified but suspicious": verified_but_suspicious,
+        "Other resolutions": other_resolutions,
+        "Resolution rate": "{:.1f}%".format(
+            (resolved / total * 100)
+            if total
+            else 0
+        ),
     }
-
 
 def render_report_summary(cases: Iterable[Dict[str, Any]]) -> None:
     """Render outcome-focused KPIs for the Reports page."""
     frame = cases_dataframe(cases)
     metrics = _report_metrics(frame)
-    columns = st.columns(6)
+    columns = st.columns(len(metrics))
     for column, (label, value) in zip(columns, metrics.items()):
         column.metric(label, value)
 

@@ -1,0 +1,9 @@
+[theme]
+primaryColor = "#0f2942"
+backgroundColor = "#f7f8fa"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#101418"
+font = "sans serif"
+
+[client]
+toolbarMode = "minimal"

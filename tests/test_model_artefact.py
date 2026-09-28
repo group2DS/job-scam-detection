@@ -206,3 +206,11 @@ def test_feature_names_are_recoverable(texts):
     names = fb.get_feature_names_out()
     assert len(names) == fb.n_text_features_ + fb.n_numeric_features_
     assert list(names[-6:]) == TextFeatureBuilder.NUMERIC_COLUMNS
+
+def test_thresholds_match_the_modelling_recommendation():
+    """Part 26.3 selected these from a cost-weighted sweep on validation data.
+    Changing them without re-running that analysis silently changes what the
+    system tells job seekers."""
+    s = get_settings()
+    assert s.suspicious_threshold == 0.25
+    assert s.high_risk_threshold == 0.70

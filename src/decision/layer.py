@@ -158,14 +158,32 @@ def _reasons(
     for hit in sorted(hits, key=lambda h: h.weight, reverse=True):
         reasons.append(Reason(code=hit.code, text=hit.label, source="rule"))
 
-    if not hits and model.probability < get_settings().suspicious_threshold:
-        reasons.append(
-            Reason(
-                code="no_content_signals",
-                text="No common scam patterns were detected in the listing text.",
-                source="model",
+    if not hits:
+        if model.probability < get_settings().suspicious_threshold:
+            reasons.append(
+                Reason(
+                    code="no_content_signals",
+                    text="No common scam patterns were detected in the listing text.",
+                    source="model",
+                )
             )
-        )
+        else:
+            # No deterministic rule matched, but the classifier still finds the
+            # wording closer to listings previously identified as fraudulent.
+            # Without this branch a posting in this band receives no content
+            # reason at all, which breaks the guarantee that every result
+            # explains itself.
+            reasons.append(
+                Reason(
+                    code="unusual_wording",
+                    text=(
+                        "No specific scam pattern matched, but the wording "
+                        "resembles listings previously identified as "
+                        "fraudulent."
+                    ),
+                    source="model",
+                )
+            )
 
     return reasons
 

@@ -110,3 +110,7 @@ __pycache__/
 .pytest_cache/
 *.pyc
 FETCH_HEAD
+
+# Reproducible modelling artefacts (regenerate from notebooks/02)
+data/processed/
+*.ipynb.bak

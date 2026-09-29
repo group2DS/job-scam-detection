@@ -10,18 +10,39 @@ the same class.
 
 Author: Cleopas Karanja. Moved from the training notebook unchanged.
 
-Revised 2026-09-28: `fit` now fits the vectoriser and scaler rather than
+Revised 2026-09-28 (a): `fit` now fits the vectoriser and scaler rather than
 relying on the training notebook transplanting already-fitted objects onto
 the instance. The previous arrangement reproduced the training run exactly,
 but it meant `sklearn.base.clone` returned a transformer with no `tfidf_` or
-`scaler_`, because clone copies constructor parameters and nothing else.
-Every sklearn utility that clones, which includes cross_val_score,
-GridSearchCV, cross_val_predict and CalibratedClassifierCV, was therefore
-unusable. The feature set and the exclusion of missing-field indicators are
-unchanged.
+`scaler_`, so every sklearn utility that clones was unusable.
 
-Pipelines pickled before this revision still load, since the class lives at
-the same import path and `transform` still reads `tfidf_` and `scaler_`.
+Revised 2026-09-28 (b): the numeric features are now length-invariant.
+
+    The previous feature set used raw `text_length` and `word_count`, which
+    made the prediction depend on how much text a person happened to paste.
+    Measured on the deployed model, an identical legitimate Safaricom
+    accountant advert scored 0.575 at 28 characters and 0.196 at 462, purely
+    as a function of length. `text_length` carried the largest negative
+    coefficient of any numeric feature (-0.2298), and the six numeric
+    features averaged 1.7 times the absolute coefficient of the 260,884 text
+    features.
+
+    The cause is corpus construction rather than fraud: EMSCAD legitimate
+    postings average 631 characters against 283 for fraudulent ones, which
+    the EDA identified in section 20.12 as a source proxy. Raw counts of
+    URLs, emails and phone numbers carry the same confound, since a longer
+    advert contains more of everything.
+
+    The signals themselves are real, so they are retained as densities per
+    100 words rather than dropped. This is the same reasoning the original
+    docstring applied to missing-field indicators: a feature that encodes how
+    a posting was submitted rather than whether it is fraudulent does not
+    generalise across ingestion channels, and this system's primary channel
+    is a job seeker pasting a few lines from WhatsApp.
+
+Pipelines pickled before either revision still load. `feature_set` defaults
+to "legacy" when absent from the unpickled instance, so an older artefact
+continues to compute the features it was fitted with.
 """
 
 from __future__ import annotations
@@ -39,12 +60,12 @@ class TextFeatureBuilder(BaseEstimator, TransformerMixin):
     alone, with no parsed posting fields required.
 
     Deliberately decoupled from any API schema (Posting or otherwise): it only
-    needs a string. Length, word count, uppercase ratio, and URL, email and
-    phone counts all derive from text already. No missing-field indicators are
-    used, since those encode how a posting was submitted rather than whether
-    it is fraudulent, and do not generalise across ingestion channels: a
-    pasted WhatsApp listing is missing a company name whether or not it is a
-    scam, where a scraped web page usually is not.
+    needs a string. Contact-detail density and shouting ratio all derive from
+    text already. No missing-field indicators are used, since those encode how
+    a posting was submitted rather than whether it is fraudulent, and do not
+    generalise across ingestion channels: a pasted WhatsApp listing is missing
+    a company name whether or not it is a scam, where a scraped web page
+    usually is not.
 
     Parameters
     ----------
@@ -53,11 +74,27 @@ class TextFeatureBuilder(BaseEstimator, TransformerMixin):
         parameters so they can be tuned through a pipeline, for example
         `features__max_features` in a GridSearchCV parameter grid.
     scale_numeric
-        Whether to standardise the six numeric features. Tree-based models do
-        not need it; linear models do.
+        Whether to standardise the numeric features. Tree-based models do not
+        need it; linear models do.
+    feature_set
+        "density" (default) uses length-invariant rates. "legacy" reproduces
+        the original raw-count features and exists so that artefacts exported
+        before 2026-09-28 continue to load and score identically.
     """
 
-    NUMERIC_COLUMNS = [
+    # Length-invariant. Counts are expressed per 100 words so that the same
+    # posting scores the same whether pasted in full or in part.
+    DENSITY_COLUMNS = [
+        "urls_per_100w",
+        "emails_per_100w",
+        "phones_per_100w",
+        "uppercase_ratio",
+        "digit_ratio",
+        "mean_word_length",
+    ]
+
+    # The original feature set. Retained for backwards compatibility only.
+    LEGACY_COLUMNS = [
         "text_length",
         "word_count",
         "url_count",
@@ -73,6 +110,7 @@ class TextFeatureBuilder(BaseEstimator, TransformerMixin):
         min_df: int = 2,
         sublinear_tf: bool = True,
         scale_numeric: bool = True,
+        feature_set: str = "density",
     ) -> None:
         # Assigned unmodified, as sklearn's get_params/clone contract requires.
         self.max_features = max_features
@@ -80,6 +118,26 @@ class TextFeatureBuilder(BaseEstimator, TransformerMixin):
         self.min_df = min_df
         self.sublinear_tf = sublinear_tf
         self.scale_numeric = scale_numeric
+        self.feature_set = feature_set
+
+    # -- feature-set selection --------------------------------------------
+
+    @property
+    def _active_feature_set(self) -> str:
+        """Artefacts pickled before this revision have no `feature_set`
+        attribute, because __init__ does not run on unpickle. Those were
+        fitted on the raw-count features, so they must keep using them."""
+        return getattr(self, "feature_set", "legacy")
+
+    @property
+    def NUMERIC_COLUMNS(self) -> list[str]:
+        """The active numeric columns. Kept as a property under the original
+        name so existing callers, tests and notebook cells are unaffected."""
+        return (
+            self.LEGACY_COLUMNS
+            if self._active_feature_set == "legacy"
+            else self.DENSITY_COLUMNS
+        )
 
     # -- internals ---------------------------------------------------------
 
@@ -100,8 +158,7 @@ class TextFeatureBuilder(BaseEstimator, TransformerMixin):
             X = X.iloc[:, 0]
         return pd.Series(X, dtype="object").reset_index(drop=True).fillna("")
 
-    def _numeric_features(self, texts) -> pd.DataFrame:
-        s = self._as_series(texts)
+    def _legacy_features(self, s: pd.Series) -> pd.DataFrame:
         out = pd.DataFrame(index=s.index)
         out["text_length"] = s.str.len()
         out["word_count"] = s.str.split().str.len()
@@ -109,12 +166,53 @@ class TextFeatureBuilder(BaseEstimator, TransformerMixin):
         out["email_count"] = s.str.count(r"\b[\w.-]+@[\w.-]+\.\w+\b")
         out["phone_count"] = s.str.count(r"\+?\d[\d\s().-]{7,}\d")
         out["uppercase_count"] = s.str.count(r"\b[A-Z]{3,}\b")
+        return out
+
+    def _density_features(self, s: pd.Series) -> pd.DataFrame:
+        """Rates rather than counts, so nothing scales with posting length.
+
+        Every column is bounded or normalised by word count, so truncating a
+        posting leaves the values broadly unchanged. `text_length` and
+        `word_count` are deliberately absent: both proved to encode corpus
+        provenance rather than fraud.
+        """
+        words = s.str.split().str.len().fillna(0)
+        chars = s.str.len().clip(lower=1)
+        # Guarded so an empty or single-word posting cannot divide by zero.
+        per_100 = 100.0 / words.clip(lower=1)
+
+        out = pd.DataFrame(index=s.index)
+        out["urls_per_100w"] = s.str.count(r"http|www\.") * per_100
+        out["emails_per_100w"] = s.str.count(r"\b[\w.-]+@[\w.-]+\.\w+\b") * per_100
+        out["phones_per_100w"] = s.str.count(r"\+?\d[\d\s().-]{7,}\d") * per_100
+        # Shouting, as a share of words rather than a raw tally.
+        out["uppercase_ratio"] = s.str.count(r"\b[A-Z]{3,}\b") * per_100 / 100.0
+        # Fee amounts, phone numbers and "KSh 2000" push this up.
+        out["digit_ratio"] = s.str.count(r"\d") / chars
+        # Separates terse informal wording from formal advert prose.
+        out["mean_word_length"] = (chars - words.clip(lower=0)) / words.clip(lower=1)
+        return out
+
+    def _numeric_features(self, texts) -> pd.DataFrame:
+        s = self._as_series(texts)
+        columns = self.NUMERIC_COLUMNS
+        out = (
+            self._legacy_features(s)
+            if self._active_feature_set == "legacy"
+            else self._density_features(s)
+        )
         # word_count is NaN for an empty string, where 0 is the correct value.
-        return out[self.NUMERIC_COLUMNS].fillna(0).astype(float)
+        return out[columns].fillna(0).replace([float("inf"), float("-inf")], 0).astype(float)
 
     # -- sklearn API -------------------------------------------------------
 
     def fit(self, X, y=None):
+        if self._active_feature_set not in {"density", "legacy"}:
+            raise ValueError(
+                f"feature_set must be 'density' or 'legacy', "
+                f"got {self.feature_set!r}"
+            )
+
         texts = self._as_series(X)
 
         self.tfidf_ = TfidfVectorizer(

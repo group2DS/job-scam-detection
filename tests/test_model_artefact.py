@@ -192,11 +192,12 @@ def test_numeric_features_are_computed_correctly():
         "Visit http://scam.example and email me at a@b.com or call +254712345678 NOW URGENT"
     ])
     row = frame.iloc[0]
-    assert row["url_count"] >= 1
-    assert row["email_count"] >= 1
-    assert row["phone_count"] >= 1
-    assert row["uppercase_count"] >= 2  # NOW, URGENT
-    assert row["word_count"] > 0
+    assert row["urls_per_100w"] > 0
+    assert row["emails_per_100w"] > 0
+    assert row["phones_per_100w"] > 0
+    assert row["uppercase_ratio"] > 0      # NOW, URGENT
+    assert row["digit_ratio"] > 0
+    assert row["mean_word_length"] > 0
 
 
 def test_feature_names_are_recoverable(texts):
@@ -205,7 +206,7 @@ def test_feature_names_are_recoverable(texts):
     fb = TextFeatureBuilder(max_features=50, min_df=1).fit(texts)
     names = fb.get_feature_names_out()
     assert len(names) == fb.n_text_features_ + fb.n_numeric_features_
-    assert list(names[-6:]) == TextFeatureBuilder.NUMERIC_COLUMNS
+    assert list(names[-6:]) == fb.NUMERIC_COLUMNS
 
 def test_thresholds_match_the_modelling_recommendation():
     """Part 26.3 selected these from a cost-weighted sweep on validation data.

@@ -144,6 +144,7 @@ def evaluate(posting: Posting) -> list[RuleHit]:
             posting.description,
             posting.raw_text,
             posting.contact_email,
+            posting.requirements,
         ]
         if part
     )

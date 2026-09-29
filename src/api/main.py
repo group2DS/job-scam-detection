@@ -54,9 +54,11 @@ async def lifespan(app: FastAPI):
     )
 
     if classifier.is_stub():
-        log.warning(
-            "Running with the STUB classifier. Results are for pipeline "
-            "testing only and must not be presented as model output."
+        log.error(
+            "MODEL NOT LOADED. Serving stub predictions from keyword rules. "
+            "Results must not be presented as model output. Check that "
+            "%s exists and that the feature builder is importable.",
+            settings.model_path,
         )
     yield
 

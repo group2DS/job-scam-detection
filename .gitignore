@@ -104,9 +104,9 @@ Thumbs.db
 
 *.log
 logs/
-.env
-*.db
-__pycache__/
-.pytest_cache/
 *.pyc
 FETCH_HEAD
+
+# Model backups (the active artefact is tracked, snapshots are not)
+artifacts/*.pkl.backup-*
+artifacts/*.pkl.v*

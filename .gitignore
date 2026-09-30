@@ -107,12 +107,10 @@ logs/
 *.pyc
 FETCH_HEAD
 
-<<<<<<< HEAD
 # Model backups (the active artefact is tracked, snapshots are not)
 artifacts/*.pkl.backup-*
 artifacts/*.pkl.v*
-=======
+
 # Reproducible modelling artefacts (regenerate from notebooks/02)
 data/processed/
 *.ipynb.bak
->>>>>>> d4ce75b0f95d69b22003d53ad9cd9e73ef1095b5

@@ -256,7 +256,7 @@ export JWT_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(
 python -m pytest tests/ -q
 ```
 
-Current validation: 71 passed.
+Current validation: 122 passed.
 
 To treat deprecation warnings as failures:
 
@@ -346,22 +346,17 @@ Real job-board postings are not automatically treated as verified legitimate exa
 
 ### 8.2 Provenance partitions
 
-The merged corpus contains 68,138 records after normalized-text deduplication.
+The merged corpus contains **71,280 records** after exact and normalized-text deduplication.
 
 | Partition | Rows | Role |
 | --- | ---: | --- |
-| Real labelled | 15,555 | Supervised modelling and isolated evaluation |
-| Synthetic scenarios | 39,527 | Training supplement and scenario testing |
-| Kenyan unlabelled | 13,056 | Local analysis and future manual annotation |
+| Real labelled (EMSCAD) | 15,537 | Supervised modelling, validation, and holdout |
+| Synthetic scenarios | 42,688 | Evaluated as a training supplement, see 8.9 |
+| Kenyan unlabelled | 13,055 | Local analysis and future manual annotation |
 
-The partitions can be regenerated with:
+Partitioning is performed inside the modelling notebook rather than by a separate script. An earlier workflow pre-computed partitions with `scripts/build_splits.py`; that script has been removed because splitting a corpus before deciding what belongs in it fixed a decision that later evidence changed.
 
-```bash
-python scripts/build_splits.py path/to/final_job_spam_dataset.csv
-```
-
-The large CSV outputs are not committed. The script provides a reproducible transformation from the merged dataset.
-
+Validation and holdout are drawn **exclusively from real EMSCAD rows**, which are split before synthetic data is considered. Synthetic rows can therefore only ever enter training, which makes contamination structurally impossible rather than merely checked for.
 ### 8.3 Fingerprint isolation
 
 The original data preparation removed exact duplicates, but normalized-text review found additional near-identical postings.
@@ -386,70 +381,154 @@ The deployed classifier therefore returns a binary fraud-risk probability. The a
 
 ### 8.5 Model pipeline
 
-The deployed artefact is a single scikit-learn Pipeline that accepts raw text.
+The deployed artefact is a single scikit-learn `Pipeline` that accepts a list of raw strings.
 
-The pipeline includes TF-IDF features using unigrams and bigrams, text length, word count, URL count, email count, phone-number count, uppercase-token count, feature scaling, and Logistic Regression.
+The pipeline combines TF-IDF features over unigrams and bigrams with six numeric features derived from the text alone:
 
-The reusable structured-text transformer lives in `src/models/feature_builder.py`.
+| Feature | Description |
+| --- | --- |
+| `urls_per_100w` | URL count, normalised per 100 words |
+| `emails_per_100w` | Email address count per 100 words |
+| `phones_per_100w` | Telephone number count per 100 words |
+| `uppercase_ratio` | Shouting, as a share of words |
+| `digit_ratio` | Digits as a share of characters |
+| `mean_word_length` | Separates terse informal wording from advert prose |
+
+Every numeric feature is a **rate rather than a count**. An earlier revision used raw `text_length`, `word_count` and raw contact counts; those were replaced because a feature that grows with posting length has no fraud interpretation, only a corpus-specific correlation. See section 8.9.
+
+No missing-field indicators are used. Absence of a company name records how a posting was submitted rather than whether it is fraudulent, and does not generalise across ingestion channels: a pasted message lacks a company field whether or not it is a scam.
+
+The reusable transformer lives in `src/models/feature_builder.py`. It is imported rather than defined in the notebook, because joblib serialises a class by import path and a notebook-local definition fails to load inside the API.
 
 The exported model lives at `artifacts/model.pkl`.
 
-Current model version: `logreg-hybrid-v3-clean-split`
+Current model version: `logreg-hybrid-v5-density-20260929`
 
-The model was exported with scikit-learn `1.9.0`, and the same version is pinned in `requirements.txt` to prevent serialized-model incompatibility.
+Configuration: `C=10.0`, `class_weight="balanced"`, uncapped TF-IDF vocabulary (260,884 terms), trained on 13,206 real EMSCAD postings.
 
+The model was exported with scikit-learn `1.9.0`, and the same version is pinned in `requirements.txt` to prevent serialised-model incompatibility.
 ### 8.6 Model comparison
 
-| Model | Validation ROC-AUC | Validation PR-AUC |
-| --- | ---: | ---: |
-| TF-IDF Logistic Regression baseline | `0.9057` | `0.6199` |
-| Hybrid LinearSVC | | `0.7386` |
-| Hybrid Logistic Regression | Selected for deployment | Selected for deployment |
+All models were trained on real EMSCAD data and scored on the same real validation set of 2,331 postings.
 
-Hybrid Logistic Regression was selected because it provides probability output directly, supports threshold tuning, remains interpretable through coefficients, works well with sparse text features, and integrates cleanly into the deployed raw-text pipeline.
+| Model | Validation PR-AUC | Validation ROC-AUC | Brier |
+| --- | ---: | ---: | ---: |
+| Majority class | `0.0438` | n/a | `0.0438` |
+| Rule engine alone | `0.0498` | `0.5155` | `0.0443` |
+| Logistic regression (tuned, raw-count features) | `0.7987` | `0.9558` | `0.0168` |
+| **Logistic regression (tuned, density features, deployed)** | **`0.7906`** | **`0.9544`** | **`0.0174`** |
+| Linear SVM (calibrated) | `0.7909` | `0.9479` | `0.0166` |
+| Rules combined with logistic regression | `0.7921` | `0.9504` | `0.0173` |
+| Gradient boosting (SVD-reduced text) | `0.6324` | `0.9063` | `0.0262` |
+| DistilBERT (fine-tuned, 3 epochs) | `0.6866` | `0.9380` | `0.0274` |
+| Frozen sentence embeddings with linear head | `0.5307` | `0.8894` | `0.0281` |
+| Zero-shot embedding similarity | `0.0998` | `0.4586` | n/a |
 
+The deployed model trades 0.0081 validation PR-AUC for length-invariant features, and catches one more fraudulent holdout posting than the raw-count version. See section 8.9.
+
+Logistic regression was selected over the calibrated linear SVM, which scores within 0.001 PR-AUC of it, because it returns a probability directly, supports threshold tuning, and remains interpretable through per-term coefficients, which the decision layer requires in order to explain itself.
+
+**The rule engine's score is not a measurement of the rules.** It fires on only 6.91% of EMSCAD postings, and the Kenya-specific rules on three or four postings each out of 2,331. EMSCAD is a United States corpus collected between 2012 and 2014 and contains almost no M-Pesa, till number, or Gulf placement vocabulary, so the rules sit at chance by construction. On this corpus they change no decisions at the operating threshold.
+
+Tuning contributed `+0.0344` PR-AUC over the previously deployed configuration refitted on the same data.
 ### 8.7 Corrected evaluation
 
-Final review identified that an earlier hybrid-model path had reintroduced holdout rows into training through a second split. The workflow was corrected, all modelling components were refitted, and the previous inflated metrics were retired.
+An earlier hybrid-model path reintroduced holdout rows into training through a second split. The workflow was corrected, all components refitted, and the inflated metrics retired. Splitting is now grouped on a normalized-text fingerprint with assertions that no fingerprint appears in more than one partition.
 
-At the validation-selected threshold of `0.35`, the corrected real holdout results are:
+The holdout is 2,331 unseen real EMSCAD postings, `4.89%` fraudulent. At the selected threshold of `0.25`:
 
 | Metric | Value |
 | --- | ---: |
-| Precision | `0.7619` |
-| Recall | `0.4812` |
-| F1 | `0.5899` |
-| ROC-AUC | `0.9214` |
-| PR-AUC | `0.6676` |
-| Confusion matrix | `[[2958, 20], [69, 64]]` |
+| PR-AUC | `0.8071` |
+| ROC-AUC | `0.9685` |
+| Brier | `0.0189` |
+| Recall | `0.8158` |
+| Precision | `0.6327` |
+| Confusion matrix | `[[2163, 54], [21, 93]]` |
 
 At this operating threshold:
 
-- 64 of 133 Fraud-risk postings were detected.
-- 69 of 133 Fraud-risk postings were missed.
-- 20 legitimate postings were incorrectly flagged.
+- 93 of 114 Fraud-risk postings were detected.
+- 21 of 114 Fraud-risk postings were missed.
+- 54 legitimate postings were flagged for review, which is `6.3%` of submissions.
 
-The result demonstrates useful ranking ability but insufficient standalone recall. This is why Hakiki Hire combines the model with deterministic scam-pattern rules, registry checks, transparent reasons, and human review.
+**The holdout score exceeds the validation score** (`0.8071` against `0.7906` PR-AUC), which indicates the selection process did not overfit. Every hyperparameter, calibration decision and threshold was chosen on training and validation data.
 
+The hardest misses are instructive. In the validation error analysis, the lowest-scoring fraudulent postings were ordinary corporate adverts containing no fee demand, no payment instruction and no unusual urgency, scored between 0.006 and 0.053 by every model tested including the fine-tuned transformer. EMSCAD labels many postings fraudulent on the basis of the employer behind them rather than the wording in front of them, which no text classifier can recover from text alone. **This is the empirical case for entity verification as a distinct component rather than a supplementary feature.**
 ### 8.8 Threshold trade-off
 
-Post hoc diagnostics show the trade-off between fraud recall and false alerts:
+The operating threshold is selected from an explicit cost asymmetry rather than inherited. A missed scam typically means a job seeker pays a fee they cannot recover; a false alarm costs a reviewer's time and routes the case to a person rather than blocking it.
 
-| Threshold | Recall | Precision |
+Validation sweep:
+
+| Threshold | Recall | Precision | Caught | Missed | False alarms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `0.35` (previous) | `0.706` | `0.818` | 72 | 30 | 16 |
+| **`0.25` (selected)** | **`0.775`** | **`0.658`** | **79** | **23** | **41** |
+| `0.20` | `0.784` | `0.548` | 80 | 22 | 66 |
+| `0.17` | `0.814` | `0.449` | 83 | 19 | 102 |
+| `0.10` | `0.843` | `0.337` | 86 | 16 | 169 |
+
+The sweep was computed on the raw-count model before the density retrain in section 8.9. The selected threshold was re-checked on the deployed density model at holdout evaluation (section 8.7).
+
+Moving from `0.35` to `0.25` catches seven more fraudulent postings for 25 additional reviews, a trade of roughly 3.6 reviews per additional detection. Minimum expected cost at both a 5x and a 10x penalty for a missed scam over a false alarm selects `0.26`, as does maximum F2. Going further to `0.17` costs roughly 15 reviews per additional detection.
+
+`high_risk_threshold` remains `0.70`, where precision is `0.967`. That tier tells a government reviewer a posting is high risk and should be close to certain.
+
+Both thresholds live in `src/core/config.py` and are pinned by a test, because the decision layer has behaviour keyed to `suspicious_threshold` beyond simple tiering. The model and the thresholds must be changed together.
+
+Calibration was evaluated and **not** applied. Sigmoid and isotonic calibration both moved the mean prediction closer to the true positive rate while making Brier score and PR-AUC worse, because shrinking scores toward the base rate costs more on confidently correct fraud cases than it recovers elsewhere.
+
+The canonical modelling notebook is `notebooks/02_job_scam_detection.ipynb`.
+
+### 8.9 Experiments that changed the design
+
+Three findings reversed a working assumption. Each is recorded because the reasoning is reusable, and because a negative result obtained properly is a result.
+
+#### Synthetic training data was excluded
+
+Adding all 42,688 synthetic rows to training **reduces** real-data PR-AUC by `0.119`. Measured across five re-drawn splits, arm B lost on every one; paired `t(4) = -4.54`, `p = 0.011`.
+
+The synthetic corpus contributes 1,842 unique terms across 42,688 rows, and `98.55%` of its vocabulary already appears in real postings. It is a small subset of real job-advert language rather than a different language, so it adds almost no lexical coverage while heavily reweighting TF-IDF document frequencies for the postings the system has to score. Word frequencies confirm fixed templates: `work` and `preferred` each occur exactly 11,426 times in the Suspicious class, which is exactly the number of Suspicious rows from that generator.
+
+The synthetic data does carry genuine Kenya-specific fraud vocabulary, which the real corpus lacks entirely. Its template structure costs more than that vocabulary is worth, so it is excluded from training and the gap is covered by the deterministic rule layer.
+
+#### Transfer learning was evaluated and declined
+
+Three levels of cost: zero-shot embedding similarity, frozen sentence embeddings with a linear head, and a full DistilBERT fine-tune on a GPU.
+
+The fine-tune produced the **largest Kenyan probe separation of any model tested** (`+0.817`), scoring an explicit M-Pesa registration-fee demand at `0.966` on a corpus containing no M-Pesa postings. It nevertheless loses on measured data (`0.6866` against `0.7987` PR-AUC) and triples the false alarm count at the same threshold.
+
+Not deployed. The deficit is measured on 2,331 real postings while the gain is measured on six hand-written probes; the decision layer owes job seekers explainable reasons that a transformer does not provide; and `torch` plus `transformers` would substantially change the deployment footprint. The fine-tune is the strongest available evidence that a labelled Kenyan corpus would materially improve the system, which makes it future work rather than a reason to change the deployment now.
+
+The training procedure is versioned at `notebooks/colab_distilbert_finetune.ipynb`.
+
+#### A suspected length artefact was disproved
+
+The same legitimate advert scored `0.575` truncated to 28 characters and `0.196` at 462, and `text_length` carried the largest negative coefficient of any numeric feature. The EDA had already flagged that EMSCAD legitimate postings average 631 characters against 283 for fraudulent ones.
+
+Length-invariant features did not fix it. Nor did removing the numeric block entirely, nor disabling sublinear TF-IDF scaling. Padding a posting with **repetitions of its own text** moved the score by `0.002` across a sixfold length increase, which exonerated length conclusively. The original test had varied *evidence* across its truncations and attributed the result to *length*: the score step falls exactly where the posting first mentions professional qualifications.
+
+The density feature set was kept regardless, on principle and on holdout recall (`81.6%` against `80.7%`).
+
+### 8.10 Known model vulnerability: vocabulary dilution
+
+Appending vocabulary a posting did not previously contain reduces the TF-IDF weight on **every term it did contain**, because the vectors are L2-normalised. Repetition does not do this; novel vocabulary does.
+
+| Variant | Words | Score |
 | --- | ---: | ---: |
-| `0.35` | `0.4812` | `0.7619` |
-| `0.30` | `0.5865` | `0.7027` |
-| `0.20` | `0.7218` | `0.4800` |
-| `0.10` | `0.8496` | `0.2062` |
+| Bare scam posting | 16 | `0.310` |
+| Repeated verbatim six times | 96 | `0.308` |
+| Padded with three sentences of neutral prose | 37 | `0.158` |
+| Padded with six sentences of neutral prose | 58 | `0.130` |
 
-These holdout diagnostics were not used for model fitting, hyperparameter tuning, or threshold selection.
+Measured on all 114 fraudulent holdout postings, appending three sentences of ordinary corporate prose moves **seven from detected to missed**, reducing recall from `81.6%` to `75.4%`.
 
-The application's warning and escalation tiers remain configurable separately from the model training process.
+The effect scales with how much new vocabulary is added relative to what the posting already contains, so **short postings are the most vulnerable**, and short pasted messages are this system's primary input.
 
-The canonical modelling notebook is `notebooks/01_job_scam_detection.ipynb`.
+The deterministic rule layer is the mitigation: regular expressions match regardless of surrounding text, so a diluted fee demand still fires `upfront_fee` and `mobile_money`, and two strong signals force high risk independent of the classifier. On EMSCAD the blend recovers only one of the seven, because the rules are near-inert on that corpus; on Kenyan traffic it would recover most of them.
 
----
-
+Recorded as a known limitation rather than fixed. Removing L2 normalisation would reintroduce genuine length sensitivity, sliding-window scoring multiplies inference cost, and weighting rule hits more heavily on disagreement erodes the independence between content risk and rule signals that the decision layer is built around. No candidate mitigation could be validated on a corpus where the mitigating component fires on 6.91% of postings.
 ## 9. Verification data
 
 Verification uses versioned demonstration data from `data/external/`.
@@ -520,7 +599,7 @@ Secrets must be supplied through host environment settings. They must not be com
 
 ## 12. Repository structure
 
-```text
+```
 job-scam-detection/
   app/
     jobseeker/              React and Vite public interface
@@ -540,10 +619,10 @@ job-scam-detection/
     diagrams/               Wireframes and visual designs
     meeting_notes/          Decisions and supervisor feedback
   notebooks/
-    01_job_scam_detection.ipynb
-    03_modelling_integration.ipynb
+    02_job_scam_detection.ipynb        Canonical: preparation, EDA, modelling
+    00_legacy_end_to_end_reference.ipynb   Superseded, retained for comparison
+    colab_distilbert_finetune.ipynb    GPU fine-tune companion, see 8.9
   scripts/
-    build_splits.py
     seed_admin.py
   src/
     api/                    FastAPI routes and authentication
@@ -558,6 +637,7 @@ job-scam-detection/
     rules/                  Deterministic scam-pattern rules
     verification/           Registry and blacklist checks
   tests/
+  tools/                    Notebook review tooling
   CONTRIBUTING.md
   README.md
   render.yaml
@@ -565,9 +645,6 @@ job-scam-detection/
 ```
 
 Large datasets, local databases, environment files, caches, and credentials are excluded from version control.
-
----
-
 ## 13. Contribution workflow
 
 New work must branch from the latest `main`.
@@ -644,11 +721,12 @@ Task tracking is managed in ClickUp. Group lead: Cleopas Karanja.
 - Reviewer decisions and audit trail
 - Vercel and Render deployment
 - Automated tests
+- Final documentation metric corrections
+- Model development, completed after a change in team ownership, including a synthetic-data experiment, transfer-learning evaluation, threshold selection, and model export
 
 ### Finalization
 
 - End-to-end production validation
-- Final documentation metric corrections
 - Final presentation metric corrections
 - Group rehearsal and demonstration preparation
 
@@ -660,8 +738,9 @@ Task tracking is managed in ClickUp. Group lead: Cleopas Karanja.
 - Kenya-specific fraud patterns are partly covered by deterministic rules rather than learned from locally confirmed examples.
 - No public, labelled Kenyan job-scam dataset was identified.
 - The current Kenyan posting collection remains an annotation pool rather than ground-truth evaluation data.
-- At the selected model threshold, 69 of 133 real Fraud-risk holdout postings were missed.
-- Synthetic training records can introduce generator-specific vocabulary into feature coefficients.
+- At the selected model threshold, 21 of 114 real Fraud-risk holdout postings were missed.
+- Synthetic training records were measured to reduce real-data performance and are excluded from training. See section 8.9.
+- Appending unrelated vocabulary to a posting weakens the classifier signal. See section 8.10.
 - Registry and blacklist records are simulated.
 - Automated link extraction does not work for every site, especially login-protected, bot-protected, or JavaScript-rendered pages.
 - Optical character recognition is not included for screenshots or image-only documents.
@@ -690,6 +769,8 @@ Potential extensions include:
 - scheduled backup and migration management,
 - WhatsApp and USSD access,
 - and structured user testing with job seekers and reviewers.
+- mitigation of vocabulary dilution (section 8.10),
+- an ensemble of the linear model and the fine-tuned transformer, whose failures overlapped by only 50%,
 
 ---
 

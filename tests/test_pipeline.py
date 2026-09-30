@@ -8,7 +8,7 @@ architecture document.
 
 import pytest
 
-from src.core.schemas import EntityType, RiskLevel, VerificationStatus
+from src.core.schemas import EntityType, Posting, RiskLevel, VerificationStatus
 from src.decision import layer
 from src.ingestion import extractor
 from src.models import classifier
@@ -226,3 +226,21 @@ def test_probability_stays_in_range():
         "Earn very high income. No interview needed. Contract on arrival."
     )
     assert 0.0 <= score <= 1.0
+
+
+def test_kenyan_fee_scam_is_flagged_by_the_full_pipeline():
+    """The classifier alone scores this below threshold (~0.22) because EMSCAD
+    contains no M-Pesa postings. The rule layer is what catches it. This test
+    guards the architectural property, not the model."""
+    text = ("Urgent hiring. Pay a refundable registration fee of KSh 2000 "
+            "via M-Pesa to secure your slot.")
+    posting = Posting(raw_text=text)
+    model = classifier.predict(text)
+    hits = engine.evaluate(posting)
+    verification = registry.verify(posting)
+    overseas = engine.looks_overseas(posting)
+    risk, *_ = layer.combine(posting, model, hits, verification, overseas)
+
+    assert model.probability < 0.35, "Classifier alone should miss this"
+    assert len(hits) >= 2, "upfront_fee and mobile_money should both fire"
+    assert risk != RiskLevel.LOWER_RISK

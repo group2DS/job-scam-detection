@@ -609,7 +609,7 @@ Full workflow and file-placement rules are documented in [CONTRIBUTING.md](CONTR
 | Data loading and cleaning | Melisa Achieng | Complete |
 | Data audit | Briannah Chelangat | Complete |
 | Exploratory data analysis | Christopher Kariuki | Complete |
-| Model development | Cleopas Karanja, Melisa Achieng | Complete |
+| Model development | Cleopas Karanja, Melisa Achieng, Alex Kinyua | Complete |
 | Model integration and validation | Alex Kinyua, Cleopas Karanja, Melisa Achieng | Complete |
 | API and backend | Alex Kinyua, Briannah Chelangat | Complete |
 | Job seeker interface | Alex Kinyua | Complete |
